@@ -27,6 +27,18 @@ Após a avaliação da implantação, o contrato de envio foi reforçado com `si
 
 Esta validação foi executada contra o código-fonte das Lambdas que o Terraform empacota, sem recriar a infraestrutura AWS Academy já destruída. Uma nova implantação deve executar `pytest tests/test_ingestion_contract.py -q` antes do `terraform apply` e repetir os três envios pela API para registrar evidências AWS atuais.
 
+### Matriz de evidências
+
+| Verificação | Executada na AWS Academy | Evidência |
+|---|---|---|
+| `terraform apply` e recursos do lakehouse | Sim | Glue Catalog, Athena, Step Functions e buckets descritos neste relatório |
+| Carga válida Bronze → Silver → Gold | Sim | totais Athena, snapshots e manifestos Iceberg |
+| API Cognito → URL pré-assinada → Bronze → ledger | Sim | `ingestion_id` `7cd2dc8e-f18a-4dd7-9f25-03cabd28b3b2`, `VersionId`, manifesto e estado `ORCHESTRATED` |
+| Três arquivos atuais de erro de ingestão | Não | testes locais S3/SQS simulados, com Quarantine e ledger stub |
+| Logs CloudWatch, objetos Quarantine e DLQs desses três erros | Não | não havia infraestrutura ativa após o `terraform destroy` |
+
+Portanto, não há como afirmar que os três arquivos de erro apareceram nos buckets, DLQs ou logs da AWS Academy: eles ainda precisam de uma nova implantação curta para essa evidência. O comportamento esperado e validado em teste local é `REJECTED` + objeto Quarantine para erro permanente; falha operacional retorna a mensagem para a fila até a DLQ.
+
 ## Respostas observadas no Athena
 
 | Cenário | Itens | Receita total | Receita de P1042 |

@@ -26,9 +26,17 @@ def rect(x, y, w, h, fill="#fff", stroke="#cbd8e6", radius=16, dash=""):
 
 
 def arrow(x1, y1, x2, y2, label="", color="#177e9d", dash=""):
-    add(f'<path d="M{x1} {y1} L{x2} {y2}" fill="none" stroke="{color}" stroke-width="3" stroke-dasharray="{dash}" marker-end="url(#arrow)"/>')
+    key = {"#177e9d": "blue", "#c84d4d": "red", "#d98d21": "orange"}[color]
+    add(f'<path d="M{x1} {y1} L{x2} {y2}" fill="none" stroke="{color}" stroke-width="3" stroke-dasharray="{dash}" marker-end="url(#arrow-{key})"/>')
     if label:
         text((x1 + x2) / 2, (y1 + y2) / 2 - 8, label, 14, 600, color)
+
+
+def route(points, color="#177e9d", dash=""):
+    """Conector ortogonal em faixas vazias: não atravessa cartões do fluxo."""
+    key = {"#177e9d": "blue", "#c84d4d": "red", "#d98d21": "orange"}[color]
+    path = " L ".join(f"{x} {y}" for x, y in points)
+    add(f'<path d="M {path}" fill="none" stroke="{color}" stroke-width="3" stroke-dasharray="{dash}" marker-end="url(#arrow-{key})"/>')
 
 
 def icon(name, x, y, size=54):
@@ -141,15 +149,19 @@ sections = [
     ]),
 ]
 
-height = 1030 + sum(90 + ((len(items) + 2) // 3) * 160 for _, items in sections)
+height = 1060 + sum(90 + ((len(items) + 2) // 3) * 160 for _, items in sections)
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{height}" viewBox="0 0 {W} {height}" role="img" aria-labelledby="title desc">')
 add('<title id="title">Inventário completo do Terraform do lakehouse da aula 25</title>')
 add('<desc id="desc">Fluxo completo de ingestão, caminhos de erro, DLQs, quarentena e inventário de cada recurso ou expansão for_each declarada no Terraform.</desc>')
-add('<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#177e9d" stroke-width="2"/></marker></defs>')
+add('<defs>'
+    '<marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#177e9d" stroke-width="2"/></marker>'
+    '<marker id="arrow-red" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#c84d4d" stroke-width="2"/></marker>'
+    '<marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#d98d21" stroke-width="2"/></marker>'
+    '</defs>')
 rect(0, 0, W, height, "#f4f8fc", "none", 0)
 text(70, 70, "Aula 25 · Inventário completo do Terraform Lakehouse", 39, 750)
 text(70, 110, "Cada cartão mapeia diretamente um recurso declarado; expansões for_each informam todas as instâncias.", 19, 400, "#557087")
-rect(70, 140, 2380, 750, "#e8f1fa", "#c5d7e8", 18)
+rect(70, 140, 2380, 780, "#e8f1fa", "#c5d7e8", 18)
 text(95, 180, "FLUXO OPERACIONAL — CAMINHO PRINCIPAL E DESVIOS", 19, 750, "#51708c")
 text(95, 210, "Seta azul: processamento normal. Vermelha: rejeição permanente confirmada. Laranja: falha operacional, retentativa e DLQ.", 16, 450, "#557087")
 
@@ -179,14 +191,15 @@ flow_node(1455, 445, 280, "CloudWatch alarms", "Errors Lambda e mensagens DLQ", 
 flow_node(1800, 445, 280, "DynamoDB ledger", "REJECTED / RETRY / ORCHESTRATED", icon_name="dynamodb")
 flow_node(2145, 445, 215, "CloudTrail", "audita Bronze", icon_name="cloudtrail")
 
-arrow(780, 342, 225, 440, "nega", "#c84d4d", "8 7")
-arrow(1075, 342, 560, 440, "falha contrato/hash", "#c84d4d", "8 7")
-arrow(1655, 342, 905, 440, "falha repetida", "#d98d21", "8 7")
-arrow(2190, 342, 1250, 440, "falha repetida", "#d98d21", "8 7")
-arrow(1925, 342, 1940, 440, "grava", "#177e9d")
-arrow(1365, 342, 2250, 440, "data events", "#177e9d", "5 6")
-arrow(905, 527, 1570, 527, "alarme", "#d98d21", "5 6")
-arrow(1250, 527, 1570, 527, "alarme", "#d98d21", "5 6")
+# Faixas y=370..430 ficam entre as duas linhas de cartões e evitam cruzamentos.
+route([(780, 342), (780, 370), (225, 370), (225, 440)], "#c84d4d", "8 7")
+route([(1925, 342), (1925, 390), (560, 390), (560, 440)], "#c84d4d", "8 7")
+route([(1655, 342), (1655, 410), (905, 410), (905, 440)], "#d98d21", "8 7")
+route([(2225, 342), (2225, 430), (1250, 430), (1250, 440)], "#d98d21", "8 7")
+arrow(1925, 342, 1940, 440, "", "#177e9d")
+route([(1365, 342), (1365, 420), (2250, 420), (2250, 440)], "#177e9d", "5 6")
+route([(905, 527), (905, 555), (1570, 555), (1570, 527)], "#d98d21", "5 6")
+route([(1250, 527), (1250, 575), (1570, 575), (1570, 527)], "#d98d21", "5 6")
 
 flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente ingestion_id", icon_name="lambda")
 flow_node(700, 640, 280, "Step Functions", "retry transitório + Catch", icon_name="step-functions")
@@ -194,22 +207,22 @@ flow_node(1065, 640, 250, "Glue Silver", "MERGE por chave", icon_name="glue")
 flow_node(1400, 640, 250, "Glue Gold", "dimensões e fatos", icon_name="glue")
 flow_node(1735, 640, 250, "S3 Gold + Catalog", "snapshots Iceberg", icon_name="s3")
 flow_node(2070, 640, 250, "Athena Consumer", "consulta certificada", icon_name="athena")
-arrow(2225, 342, 485, 635, "SQS mapping")
+route([(2225, 342), (2415, 342), (2415, 600), (485, 600), (485, 635)], "#177e9d")
 arrow(615, 681, 695, 681, "StartExecution")
 arrow(980, 681, 1060, 681, "run Silver")
 arrow(1315, 681, 1395, 681, "run Gold")
 arrow(1650, 681, 1730, 681, "commit")
 arrow(1985, 681, 2065, 681, "consulta")
-flow_node(95, 755, 320, "Falha Silver", "Gold não inicia; execução FAILED", "#fff2f2", "#d77878", "step-functions")
-flow_node(480, 755, 320, "Falha Gold", "Silver permanece em snapshot Iceberg", "#fff2f2", "#d77878", "step-functions")
-flow_node(865, 755, 345, "CloudWatch: ExecutionsFailed", "alarme e investigação por execution ARN", "#fff8e8", "#d99a35", "cloudwatch")
-arrow(1190, 722, 255, 750, "Catch após retries", "#c84d4d", "8 7")
-arrow(1525, 722, 640, 750, "Catch após retries", "#c84d4d", "8 7")
-arrow(415, 796, 860, 796, "métrica de falha", "#d98d21", "5 6")
-arrow(800, 796, 860, 796, "métrica de falha", "#d98d21", "5 6")
-text(95, 860, "Reprocessamento: mensagens nas DLQs devem ser investigadas e reenviadas manualmente após a causa ser corrigida. Quarantine preserva o original rejeitado e a razão.", 16, 500, "#506983")
+flow_node(1000, 755, 320, "Falha Silver", "Gold não inicia; execução FAILED", "#fff2f2", "#d77878", "step-functions")
+flow_node(1380, 755, 320, "Falha Gold", "Silver permanece em snapshot Iceberg", "#fff2f2", "#d77878", "step-functions")
+flow_node(1760, 755, 345, "CloudWatch: ExecutionsFailed", "alarme e investigação por execution ARN", "#fff8e8", "#d99a35", "cloudwatch")
+arrow(1190, 722, 1160, 750, "", "#c84d4d", "8 7")
+arrow(1525, 722, 1540, 750, "", "#c84d4d", "8 7")
+route([(1320, 837), (1320, 855), (1932, 855), (1932, 837)], "#d98d21", "5 6")
+route([(1700, 837), (1700, 875), (1932, 875), (1932, 837)], "#d98d21", "5 6")
+text(95, 900, "Reprocessamento: mensagens nas DLQs devem ser investigadas e reenviadas manualmente após a causa ser corrigida. Quarantine preserva o original rejeitado e a razão.", 16, 500, "#506983")
 
-y = 965
+y = 995
 for section, items in sections:
     text(70, y, section, 20, 750, "#56718b")
     y += 26
