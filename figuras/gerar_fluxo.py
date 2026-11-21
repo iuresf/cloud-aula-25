@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Gera o inventário visual completo dos recursos declarados pelo Terraform."""
+from base64 import b64encode
 from html import escape
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 W, COL, GAP, X0 = 2520, 760, 45, 70
+ICONS = {
+    name: "data:image/svg+xml;base64," + b64encode((ROOT / "icones" / f"{name}.svg").read_bytes()).decode()
+    for name in ("s3", "glue", "step-functions", "athena", "lambda", "dynamodb", "cloudwatch", "cloudtrail", "cognito", "waf", "sqs", "api-gateway")
+}
 parts = []
 
 
@@ -26,10 +31,17 @@ def arrow(x1, y1, x2, y2, label="", color="#177e9d", dash=""):
         text((x1 + x2) / 2, (y1 + y2) / 2 - 8, label, 14, 600, color)
 
 
-def flow_node(x, y, w, title, detail, fill="#ffffff", stroke="#84a8c8"):
+def icon(name, x, y, size=54):
+    add(f'<image x="{x}" y="{y}" width="{size}" height="{size}" href="{ICONS[name]}"/>')
+
+
+def flow_node(x, y, w, title, detail, fill="#ffffff", stroke="#84a8c8", icon_name=None):
     rect(x, y, w, 82, fill, stroke, 14)
-    text(x + 15, y + 32, title, 17, 750)
-    text(x + 15, y + 58, detail, 14, 450, "#506983")
+    text_x = x + 76 if icon_name else x + 15
+    if icon_name:
+        icon(icon_name, x + 13, y + 14, 52)
+    text(text_x, y + 32, title, 17, 750)
+    text(text_x, y + 58, detail, 14, 450, "#506983")
 
 
 def card(x, y, service, address, title, lines, status="TF", fill="#fff"):
@@ -141,13 +153,14 @@ text(95, 180, "FLUXO OPERACIONAL — CAMINHO PRINCIPAL E DESVIOS", 19, 750, "#51
 text(95, 210, "Seta azul: processamento normal. Seta vermelha tracejada: rejeição ou erro. Seta laranja tracejada: retentativa e retenção em DLQ.", 16, 450, "#557087")
 
 flow_node(95, 260, 230, "Produtor externo", "client_credentials")
-flow_node(370, 260, 230, "Cognito", "token + scope write", "#ffffff", "#84a8c8")
-flow_node(645, 260, 270, "API Gateway REST + WAF", "autoriza, limita e bloqueia", "#ffffff", "#84a8c8")
-flow_node(960, 260, 230, "Lambda API", "valida metadados", "#ffffff", "#84a8c8")
-flow_node(1235, 260, 260, "S3 Bronze /ingestion", "original, VersionId, checksum", "#ffffff", "#84a8c8")
-flow_node(1540, 260, 230, "SQS object-events", "buffer e 5 tentativas", "#ffffff", "#84a8c8")
-flow_node(1815, 260, 230, "Lambda Receipt", "hash, manifesto, ledger", "#ffffff", "#84a8c8")
-flow_node(2090, 260, 270, "SQS ready", "evento pronto para ETL", "#ffffff", "#84a8c8")
+flow_node(370, 260, 230, "Cognito", "token + scope write", icon_name="cognito")
+flow_node(645, 260, 270, "API Gateway REST + WAF", "autoriza, limita e bloqueia", icon_name="api-gateway")
+icon("waf", 850, 272, 32)
+flow_node(960, 260, 230, "Lambda API", "valida metadados", icon_name="lambda")
+flow_node(1235, 260, 260, "S3 Bronze /ingestion", "original, VersionId, checksum", icon_name="s3")
+flow_node(1540, 260, 230, "SQS object-events", "buffer e 5 tentativas", icon_name="sqs")
+flow_node(1815, 260, 230, "Lambda Receipt", "hash, manifesto, ledger", icon_name="lambda")
+flow_node(2090, 260, 270, "SQS ready", "evento pronto para ETL", icon_name="sqs")
 
 arrow(325, 301, 365, 301, "token")
 arrow(600, 301, 640, 301, "Bearer")
@@ -158,12 +171,12 @@ arrow(1770, 301, 1810, 301, "batch")
 arrow(2045, 301, 2085, 301, "manifesto")
 
 flow_node(95, 445, 260, "Resposta 4xx", "token, WAF ou contrato API", "#fff2f2", "#d77878")
-flow_node(420, 445, 280, "S3 Quarantine", "metadados/hash inválidos", "#fff2f2", "#d77878")
-flow_node(765, 445, 280, "DLQ object-events", "Receipt falha após 5 tentativas", "#fff8e8", "#d99a35")
-flow_node(1110, 445, 280, "DLQ ready", "Orchestrator falha após 5 tentativas", "#fff8e8", "#d99a35")
-flow_node(1455, 445, 280, "CloudWatch alarms", "Errors Lambda e mensagens DLQ", "#fff8e8", "#d99a35")
-flow_node(1800, 445, 280, "DynamoDB ledger", "RECEIVED / ORCHESTRATED", "#ffffff", "#84a8c8")
-flow_node(2145, 445, 215, "CloudTrail", "audita Bronze", "#ffffff", "#84a8c8")
+flow_node(420, 445, 280, "S3 Quarantine", "metadados/hash inválidos", "#fff2f2", "#d77878", "s3")
+flow_node(765, 445, 280, "DLQ object-events", "Receipt falha após 5 tentativas", "#fff8e8", "#d99a35", "sqs")
+flow_node(1110, 445, 280, "DLQ ready", "Orchestrator falha após 5 tentativas", "#fff8e8", "#d99a35", "sqs")
+flow_node(1455, 445, 280, "CloudWatch alarms", "Errors Lambda e mensagens DLQ", "#fff8e8", "#d99a35", "cloudwatch")
+flow_node(1800, 445, 280, "DynamoDB ledger", "RECEIVED / ORCHESTRATED", icon_name="dynamodb")
+flow_node(2145, 445, 215, "CloudTrail", "audita Bronze", icon_name="cloudtrail")
 
 arrow(780, 342, 225, 440, "nega", "#c84d4d", "8 7")
 arrow(1075, 342, 560, 440, "falha contrato/hash", "#c84d4d", "8 7")
@@ -174,12 +187,12 @@ arrow(1365, 342, 2250, 440, "data events", "#177e9d", "5 6")
 arrow(905, 527, 1570, 527, "alarme", "#d98d21", "5 6")
 arrow(1250, 527, 1570, 527, "alarme", "#d98d21", "5 6")
 
-flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente ingestion_id", "#ffffff", "#84a8c8")
-flow_node(700, 640, 280, "Step Functions", "Silver .sync → Gold .sync", "#ffffff", "#84a8c8")
-flow_node(1065, 640, 250, "Glue Silver", "MERGE por chave", "#ffffff", "#84a8c8")
-flow_node(1400, 640, 250, "Glue Gold", "dimensões e fatos", "#ffffff", "#84a8c8")
-flow_node(1735, 640, 250, "S3 Gold + Catalog", "snapshots Iceberg", "#ffffff", "#84a8c8")
-flow_node(2070, 640, 250, "Athena Consumer", "consulta certificada", "#ffffff", "#84a8c8")
+flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente ingestion_id", icon_name="lambda")
+flow_node(700, 640, 280, "Step Functions", "Silver .sync → Gold .sync", icon_name="step-functions")
+flow_node(1065, 640, 250, "Glue Silver", "MERGE por chave", icon_name="glue")
+flow_node(1400, 640, 250, "Glue Gold", "dimensões e fatos", icon_name="glue")
+flow_node(1735, 640, 250, "S3 Gold + Catalog", "snapshots Iceberg", icon_name="s3")
+flow_node(2070, 640, 250, "Athena Consumer", "consulta certificada", icon_name="athena")
 arrow(2225, 342, 485, 635, "SQS mapping")
 arrow(615, 681, 695, 681, "StartExecution")
 arrow(980, 681, 1060, 681, "run Silver")
