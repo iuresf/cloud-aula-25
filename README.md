@@ -112,6 +112,14 @@ pytest tests/test_ingestion_contract.py -q
 
 O mesmo arquivo de teste também cobre `400` para payload inválido, `503` para falha ao gerar URL pré-assinada, reentrega por indisponibilidade da fila `ready` e a gravação de `ORCHESTRATION_RETRY` quando a Step Functions não aceita uma execução.
 
+Após `terraform apply`, a validação integrada na conta AWS é executada com:
+
+```bash
+.venv/bin/python scripts/validate_ingestion_aws.py
+```
+
+Ela obtém token Cognito, envia um arquivo válido pela API, confirma o estado `ORCHESTRATED` e interrompe sua execução parcial antes do Glue. Em seguida, envia o erro de tamanho pela API e os erros de metadados e hash ao prefixo Bronze para validar a Lambda `receipt`. O relatório sem segredos é gravado em `evidencias/*-ingestao-aws.json`; ele confirma ledger, Quarantine, logs CloudWatch e contadores das DLQs.
+
 ### Operação e retenção
 
 - O CloudTrail grava eventos de gerenciamento e de objetos Bronze no bucket Audit, com validação de integridade dos logs.

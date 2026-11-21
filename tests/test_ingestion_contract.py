@@ -162,6 +162,7 @@ def test_receipt_quarantines_permanent_error_files_and_acknowledges_message(
     result = receipt.handler(receipt_event(), None)
     assert result == {"batchItemFailures": []}
     assert len(s3.copies) == 1
+    assert s3.copies[0]["Metadata"]["reason"].isascii()
     assert ddb.updates[0]["ExpressionAttributeValues"][":status"]["S"] == "REJECTED"
     assert ddb.updates[0]["ExpressionAttributeValues"][":reason"]["S"] == reason
 

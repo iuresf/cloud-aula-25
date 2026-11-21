@@ -27,7 +27,7 @@ Após a avaliação da implantação, o contrato de envio foi reforçado com `si
 
 Esta validação foi executada contra o código-fonte das Lambdas que o Terraform empacota, sem recriar a infraestrutura AWS Academy já destruída. Uma nova implantação deve executar `pytest tests/test_ingestion_contract.py -q` antes do `terraform apply` e repetir os três envios pela API para registrar evidências AWS atuais.
 
-### Matriz de evidências
+### Matriz de evidências antes da nova implantação
 
 | Verificação | Executada na AWS Academy | Evidência |
 |---|---|---|
@@ -37,7 +37,25 @@ Esta validação foi executada contra o código-fonte das Lambdas que o Terrafor
 | Três arquivos atuais de erro de ingestão | Não | testes locais S3/SQS simulados, com Quarantine e ledger stub |
 | Logs CloudWatch, objetos Quarantine e DLQs desses três erros | Não | não havia infraestrutura ativa após o `terraform destroy` |
 
-Portanto, não há como afirmar que os três arquivos de erro apareceram nos buckets, DLQs ou logs da AWS Academy: eles ainda precisam de uma nova implantação curta para essa evidência. O comportamento esperado e validado em teste local é `REJECTED` + objeto Quarantine para erro permanente; falha operacional retorna a mensagem para a fila até a DLQ.
+Essa lacuna foi coberta na validação integrada descrita a seguir. O comportamento esperado e validado é `REJECTED` + objeto Quarantine para erro permanente; falha operacional retorna a mensagem para a fila até a DLQ.
+
+## Nova implantação e teste integrado de ingestão — 21/11/2026
+
+O Terraform criou **67 recursos** sem divergência de plano. A carga completa `runner.py initial` terminou `SUCCEEDED` na Step Functions: Silver concluiu às 03:11:14 e Gold às 03:12:53 (America/Fortaleza). Athena confirmou **5 itens** e receita de **R$ 249,70**.
+
+O script `scripts/validate_ingestion_aws.py` executou o fluxo novo na conta AWS Academy. O envio válido por Cognito → API Gateway → URL pré-assinada criou o objeto Bronze versionado e chegou ao ledger como `ORCHESTRATED`; a execução parcial foi interrompida antes do Glue. Os três cenários de erro foram conferidos nos serviços reais:
+
+| Arquivo | Estado no ledger | Objeto Quarantine | Log Receipt |
+|---|---|---|---|
+| `tamanho-divergente.csv` | `REJECTED`: tamanho do objeto divergente | Sim | Sim |
+| `metadados-ausentes.csv` | `REJECTED`: metadados obrigatórios ausentes | Sim | Sim |
+| `hash-divergente.csv` | `REJECTED`: sha256 divergente | Sim | Sim |
+
+No encerramento do teste, a Quarantine tinha 5 objetos acumulados de tentativas controladas, e `object-events-dlq=0` e `ready-dlq=0`. A evidência sem segredos está em `evidencias/20261121T060814-ingestao-aws.json`.
+
+O primeiro envio de `metadados-ausentes.csv` revelou que o S3 rejeita caracteres não ASCII em metadados HTTP: a razão com acento fazia a cópia à Quarantine falhar e a mensagem retornar à fila. A Lambda `receipt` foi corrigida para converter apenas o metadado S3 para ASCII, preservando a razão original no DynamoDB e no log. A correção foi reaplicada e o cenário passou na AWS.
+
+Após copiar as evidências, `terraform apply destroy.tfplan` removeu os 63 recursos criados nessa validação. O estado Terraform terminou vazio; `head-bucket` retornou inexistente para Bronze, Quarantine e Gold, e as consultas ao database Glue e à Lambda Receipt também retornaram inexistente.
 
 ## Respostas observadas no Athena
 

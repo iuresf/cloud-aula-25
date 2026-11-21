@@ -27,9 +27,11 @@ def sha256_object(bucket, key, version):
 
 def quarantine(bucket, key, version, reason):
     target = f"rejected/{datetime.now(timezone.utc).strftime('%Y/%m/%d')}/{key}"
+    # S3 aceita somente ASCII em metadados HTTP; o motivo completo continua no ledger.
+    metadata_reason = reason.encode("ascii", "ignore").decode()
     s3.copy_object(Bucket=os.environ["QUARANTINE_BUCKET"], Key=target,
                    CopySource={"Bucket": bucket, "Key": key, "VersionId": version},
-                   MetadataDirective="REPLACE", Metadata={"reason": reason[:180], "source-key": key})
+                   MetadataDirective="REPLACE", Metadata={"reason": metadata_reason[:180], "source-key": key})
 
 
 def record_rejection(bucket, key, version, metadata, reason):
@@ -102,7 +104,9 @@ def handler(event, _context):
                 process(item)
             except PermanentIngestionError as exc:
                 print(json.dumps({"event": "ingestion_rejected", "message_id": record["messageId"], "reason": str(exc)}))
-            except Exception:
+            except Exception as exc:
+                print(json.dumps({"event": "ingestion_retry", "message_id": record["messageId"],
+                                  "error_type": type(exc).__name__, "reason": str(exc)}))
                 retry_record = True
         if retry_record:
             failures.append({"itemIdentifier": record["messageId"]})
