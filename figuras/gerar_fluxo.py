@@ -20,10 +20,16 @@ def rect(x, y, w, h, fill="#fff", stroke="#cbd8e6", radius=16, dash=""):
     add(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{radius}" fill="{fill}" stroke="{stroke}" stroke-width="2" stroke-dasharray="{dash}"/>')
 
 
-def arrow(x1, y1, x2, y2, label=""):
-    add(f'<path d="M{x1} {y1} L{x2} {y2}" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>')
+def arrow(x1, y1, x2, y2, label="", color="#177e9d", dash=""):
+    add(f'<path d="M{x1} {y1} L{x2} {y2}" fill="none" stroke="{color}" stroke-width="3" stroke-dasharray="{dash}" marker-end="url(#arrow)"/>')
     if label:
-        text((x1 + x2) / 2, (y1 + y2) / 2 - 8, label, 14, 600, "#177e9d")
+        text((x1 + x2) / 2, (y1 + y2) / 2 - 8, label, 14, 600, color)
+
+
+def flow_node(x, y, w, title, detail, fill="#ffffff", stroke="#84a8c8"):
+    rect(x, y, w, 82, fill, stroke, 14)
+    text(x + 15, y + 32, title, 17, 750)
+    text(x + 15, y + 58, detail, 14, 450, "#506983")
 
 
 def card(x, y, service, address, title, lines, status="TF", fill="#fff"):
@@ -122,22 +128,67 @@ sections = [
     ]),
 ]
 
-height = 480 + sum(90 + ((len(items) + 2) // 3) * 160 for _, items in sections)
+height = 930 + sum(90 + ((len(items) + 2) // 3) * 160 for _, items in sections)
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{height}" viewBox="0 0 {W} {height}" role="img" aria-labelledby="title desc">')
 add('<title id="title">Inventário completo do Terraform do lakehouse da aula 25</title>')
-add('<desc id="desc">Cada cartão representa um recurso ou uma expansão for_each declarada no Terraform. As setas iniciais mostram o fluxo principal de ingestão e ETL.</desc>')
+add('<desc id="desc">Fluxo completo de ingestão, caminhos de erro, DLQs, quarentena e inventário de cada recurso ou expansão for_each declarada no Terraform.</desc>')
 add('<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#177e9d" stroke-width="2"/></marker></defs>')
 rect(0, 0, W, height, "#f4f8fc", "none", 0)
 text(70, 70, "Aula 25 · Inventário completo do Terraform Lakehouse", 39, 750)
 text(70, 110, "Cada cartão mapeia diretamente um recurso declarado; expansões for_each informam todas as instâncias.", 19, 400, "#557087")
-rect(70, 140, 2380, 160, "#e8f1fa", "#c5d7e8", 18)
-text(95, 177, "FLUXO PRINCIPAL", 17, 750, "#51708c")
-text(95, 214, "Cognito → API Gateway REST + WAF → Lambda API → S3 Bronze → SQS → Lambda Receipt → SQS → Lambda Orchestrator → Step Functions → Glue Silver → Glue Gold", 17, 600)
-text(95, 252, "Linhas tracejadas indicam recursos opcionais: Lake Formation e o agendador de manutenção quando enable_iceberg_maintenance=true.", 16, 400, "#557087")
-arrow(190, 325, 420, 325, "token"); arrow(470, 325, 700, 325, "sessão"); arrow(750, 325, 980, 325, "upload"); arrow(1030, 325, 1260, 325, "evento"); arrow(1310, 325, 1540, 325, "manifesto"); arrow(1590, 325, 1820, 325, "execução"); arrow(1870, 325, 2100, 325, "jobs")
-text(125, 356, "Cognito", 15, 700); text(500, 356, "API", 15, 700); text(770, 356, "Bronze", 15, 700); text(1065, 356, "SQS", 15, 700); text(1330, 356, "Receipt", 15, 700); text(1620, 356, "Orchestrator", 15, 700); text(1890, 356, "SFN / Glue", 15, 700)
+rect(70, 140, 2380, 650, "#e8f1fa", "#c5d7e8", 18)
+text(95, 180, "FLUXO OPERACIONAL — CAMINHO PRINCIPAL E DESVIOS", 19, 750, "#51708c")
+text(95, 210, "Seta azul: processamento normal. Seta vermelha tracejada: rejeição ou erro. Seta laranja tracejada: retentativa e retenção em DLQ.", 16, 450, "#557087")
 
-y = 405
+flow_node(95, 260, 230, "Produtor externo", "client_credentials")
+flow_node(370, 260, 230, "Cognito", "token + scope write", "#ffffff", "#84a8c8")
+flow_node(645, 260, 270, "API Gateway REST + WAF", "autoriza, limita e bloqueia", "#ffffff", "#84a8c8")
+flow_node(960, 260, 230, "Lambda API", "valida metadados", "#ffffff", "#84a8c8")
+flow_node(1235, 260, 260, "S3 Bronze /ingestion", "original, VersionId, checksum", "#ffffff", "#84a8c8")
+flow_node(1540, 260, 230, "SQS object-events", "buffer e 5 tentativas", "#ffffff", "#84a8c8")
+flow_node(1815, 260, 230, "Lambda Receipt", "hash, manifesto, ledger", "#ffffff", "#84a8c8")
+flow_node(2090, 260, 270, "SQS ready", "evento pronto para ETL", "#ffffff", "#84a8c8")
+
+arrow(325, 301, 365, 301, "token")
+arrow(600, 301, 640, 301, "Bearer")
+arrow(915, 301, 955, 301, "invoke")
+arrow(1190, 301, 1230, 301, "URL pré-assinada")
+arrow(1495, 301, 1535, 301, "ObjectCreated")
+arrow(1770, 301, 1810, 301, "batch")
+arrow(2045, 301, 2085, 301, "manifesto")
+
+flow_node(95, 445, 260, "Resposta 4xx", "token, WAF ou contrato API", "#fff2f2", "#d77878")
+flow_node(420, 445, 280, "S3 Quarantine", "metadados/hash inválidos", "#fff2f2", "#d77878")
+flow_node(765, 445, 280, "DLQ object-events", "Receipt falha após 5 tentativas", "#fff8e8", "#d99a35")
+flow_node(1110, 445, 280, "DLQ ready", "Orchestrator falha após 5 tentativas", "#fff8e8", "#d99a35")
+flow_node(1455, 445, 280, "CloudWatch alarms", "Errors Lambda e mensagens DLQ", "#fff8e8", "#d99a35")
+flow_node(1800, 445, 280, "DynamoDB ledger", "RECEIVED / ORCHESTRATED", "#ffffff", "#84a8c8")
+flow_node(2145, 445, 215, "CloudTrail", "audita Bronze", "#ffffff", "#84a8c8")
+
+arrow(780, 342, 225, 440, "nega", "#c84d4d", "8 7")
+arrow(1075, 342, 560, 440, "falha contrato/hash", "#c84d4d", "8 7")
+arrow(1655, 342, 905, 440, "falha repetida", "#d98d21", "8 7")
+arrow(2190, 342, 1250, 440, "falha repetida", "#d98d21", "8 7")
+arrow(1925, 342, 1940, 440, "grava", "#177e9d")
+arrow(1365, 342, 2250, 440, "data events", "#177e9d", "5 6")
+arrow(905, 527, 1570, 527, "alarme", "#d98d21", "5 6")
+arrow(1250, 527, 1570, 527, "alarme", "#d98d21", "5 6")
+
+flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente ingestion_id", "#ffffff", "#84a8c8")
+flow_node(700, 640, 280, "Step Functions", "Silver .sync → Gold .sync", "#ffffff", "#84a8c8")
+flow_node(1065, 640, 250, "Glue Silver", "MERGE por chave", "#ffffff", "#84a8c8")
+flow_node(1400, 640, 250, "Glue Gold", "dimensões e fatos", "#ffffff", "#84a8c8")
+flow_node(1735, 640, 250, "S3 Gold + Catalog", "snapshots Iceberg", "#ffffff", "#84a8c8")
+flow_node(2070, 640, 250, "Athena Consumer", "consulta certificada", "#ffffff", "#84a8c8")
+arrow(2225, 342, 485, 635, "SQS mapping")
+arrow(615, 681, 695, 681, "StartExecution")
+arrow(980, 681, 1060, 681, "run Silver")
+arrow(1315, 681, 1395, 681, "run Gold")
+arrow(1650, 681, 1730, 681, "commit")
+arrow(1985, 681, 2065, 681, "consulta")
+text(95, 760, "Reprocessamento: mensagens nas DLQs devem ser investigadas e reenviadas manualmente após a causa ser corrigida. Quarantine preserva o original rejeitado e a razão.", 16, 500, "#506983")
+
+y = 865
 for section, items in sections:
     text(70, y, section, 20, 750, "#56718b")
     y += 26
