@@ -83,7 +83,7 @@ sections = [
         ("Archive provider", "data.archive_file.lambda[api]", "Pacote Lambda API", ["zip de lambdas/api_ingestion.py"]),
         ("Archive provider", "data.archive_file.lambda[receipt]", "Pacote Lambda Receipt", ["zip de lambdas/receipt.py"]),
         ("Archive provider", "data.archive_file.lambda[orchestrator]", "Pacote Lambda Orchestrator", ["zip de lambdas/orchestrator.py"]),
-        ("Amazon DynamoDB", "aws_dynamodb_table.ingestion", "Ledger de ingestão", ["PK object_version; PITR", "estado RECEIVED / ORCHESTRATED"]),
+        ("Amazon DynamoDB", "aws_dynamodb_table.ingestion", "Ledger de ingestão", ["PK object_version; PITR", "RECEIVED / REJECTED / RETRY / ORCHESTRATED"]),
         ("Amazon Cognito", "aws_cognito_user_pool.ingestors", "User pool", ["identidade dos produtores"]),
         ("Amazon Cognito", "aws_cognito_resource_server.ingestion", "Resource server", ["scope ingestion/write"]),
         ("Amazon Cognito", "aws_cognito_user_pool_domain.ingestors", "Domínio OAuth2", ["endpoint client_credentials"]),
@@ -157,10 +157,10 @@ flow_node(95, 260, 230, "Produtor externo", "client_credentials")
 flow_node(370, 260, 230, "Cognito", "token + scope write", icon_name="cognito")
 flow_node(645, 260, 270, "API Gateway REST + WAF", "autoriza, limita e bloqueia", icon_name="api-gateway")
 icon("waf", 850, 272, 32)
-flow_node(960, 260, 230, "Lambda API", "valida metadados", icon_name="lambda")
+flow_node(960, 260, 230, "Lambda API", "contrato, hash e tamanho", icon_name="lambda")
 flow_node(1235, 260, 260, "S3 Bronze /ingestion", "original, VersionId, checksum", icon_name="s3")
 flow_node(1540, 260, 230, "SQS object-events", "buffer e 5 tentativas", icon_name="sqs")
-flow_node(1815, 260, 230, "Lambda Receipt", "hash, manifesto, ledger", icon_name="lambda")
+flow_node(1815, 260, 230, "Lambda Receipt", "hash/tamanho, manifesto, ledger", icon_name="lambda")
 flow_node(2090, 260, 270, "SQS ready", "evento pronto para ETL", icon_name="sqs")
 
 arrow(325, 301, 365, 301, "token")
@@ -172,11 +172,11 @@ arrow(1770, 301, 1810, 301, "batch")
 arrow(2045, 301, 2085, 301, "manifesto")
 
 flow_node(95, 445, 260, "Resposta 4xx", "token, WAF ou contrato API", "#fff2f2", "#d77878")
-flow_node(420, 445, 280, "S3 Quarantine", "metadados/hash inválidos", "#fff2f2", "#d77878", "s3")
+flow_node(420, 445, 280, "S3 Quarantine", "metadados, tamanho ou hash inválidos", "#fff2f2", "#d77878", "s3")
 flow_node(765, 445, 280, "DLQ object-events", "Receipt falha após 5 tentativas", "#fff8e8", "#d99a35", "sqs")
 flow_node(1110, 445, 280, "DLQ ready", "Orchestrator falha após 5 tentativas", "#fff8e8", "#d99a35", "sqs")
 flow_node(1455, 445, 280, "CloudWatch alarms", "Errors Lambda e mensagens DLQ", "#fff8e8", "#d99a35", "cloudwatch")
-flow_node(1800, 445, 280, "DynamoDB ledger", "RECEIVED / ORCHESTRATED", icon_name="dynamodb")
+flow_node(1800, 445, 280, "DynamoDB ledger", "REJECTED / RETRY / ORCHESTRATED", icon_name="dynamodb")
 flow_node(2145, 445, 215, "CloudTrail", "audita Bronze", icon_name="cloudtrail")
 
 arrow(780, 342, 225, 440, "nega", "#c84d4d", "8 7")

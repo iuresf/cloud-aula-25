@@ -85,11 +85,11 @@ SQS ready → Lambda orchestrator → Step Functions → Glue Silver → Glue Go
              └→ DLQ em falhas repetidas de cada fila
 ```
 
-1. O cliente obtém um token OAuth2 no Cognito usando `client_credentials` e chama `POST /ingestions` com `file_name`, `content_type`, `source_system`, `schema_version` e SHA-256.
-2. A Lambda API valida esses metadados, cria o `ingestion_id` e devolve uma URL pré-assinada válida por 15 minutos. O arquivo não atravessa a API ou Lambda.
+1. O cliente obtém um token OAuth2 no Cognito usando `client_credentials` e chama `POST /ingestions` com `file_name`, `content_type`, `source_system`, `schema_version`, `size_bytes` e SHA-256.
+2. A Lambda API valida o contrato, inclusive tamanho positivo até 100 MiB, cria o `ingestion_id` e devolve uma URL pré-assinada válida por 15 minutos. Erros de contrato retornam `400 / VALIDATION_ERROR`; indisponibilidade ao assinar a URL retorna `503 / PRESIGN_UNAVAILABLE`. O arquivo não atravessa a API ou Lambda.
 3. O upload no prefixo `ingestion/` gera um evento S3 na fila. A Lambda `receipt` calcula novamente o SHA-256, valida metadados, grava o manifesto Bronze e registra `bucket/chave/VersionId` no DynamoDB.
 4. O evento pronto segue à segunda fila. A Lambda `orchestrator` inicia a Step Functions com nome derivado do `ingestion_id`; reentregas não iniciam outra execução com o mesmo nome.
-5. Falhas de contrato copiam o arquivo para `Quarantine`; falhas transitórias são reenviadas pela SQS e seguem para a DLQ após cinco tentativas. Alarmes observam DLQs e erros de Lambda.
+5. Falhas de contrato na chegada, incluindo metadados ausentes, tamanho divergente ou hash divergente, copiam o original para `Quarantine`, registram `REJECTED` e a razão no ledger e confirmam a mensagem. Falhas operacionais de S3, DynamoDB ou SQS são reenviadas pela SQS e seguem para a DLQ após cinco tentativas. A Lambda `orchestrator` registra `ORCHESTRATION_RETRY` no ledger antes de devolver uma falha transitória à fila `ready`. Alarmes observam DLQs e erros de Lambda.
 6. Na Step Functions, Silver e Gold tentam novamente até três vezes para erros transitórios do Glue e timeout, com espera exponencial de 15 s. Qualquer erro restante é capturado: uma falha Silver encerra a execução como `FAILED` sem iniciar Gold; uma falha Gold encerra como `FAILED`, preservando o snapshot Iceberg já publicado por Silver. O alarme `ExecutionsFailed` registra essas execuções no CloudWatch.
 
 O cliente usa todos os cabeçalhos devolvidos pela API, inclusive `x-amz-checksum-sha256`; assim o S3 verifica o checksum durante o upload e a Lambda `receipt` o recalcula sobre o objeto versionado. O contrato de entrada é deliberadamente mínimo: para executar um refresh dimensional completo, envie o conjunto de datasets esperado pelo job Silver usando o fluxo de lote da aplicação produtora. O `runner.py` continua sendo o caminho de carga demonstrativa da aula.

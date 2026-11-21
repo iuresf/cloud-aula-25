@@ -13,6 +13,10 @@ sqs = boto3.client("sqs")
 ddb = boto3.client("dynamodb")
 
 
+class PermanentIngestionError(Exception):
+    """Erro de contrato do arquivo: preserva evidência e confirma a mensagem SQS."""
+
+
 def sha256_object(bucket, key, version):
     digest = hashlib.sha256()
     body = s3.get_object(Bucket=bucket, Key=key, VersionId=version)["Body"]
@@ -28,6 +32,26 @@ def quarantine(bucket, key, version, reason):
                    MetadataDirective="REPLACE", Metadata={"reason": reason[:180], "source-key": key})
 
 
+def record_rejection(bucket, key, version, metadata, reason):
+    """Mantém no ledger o objeto rejeitado, mesmo quando não há manifesto válido."""
+    object_version = f"{bucket}/{key}/{version}"
+    ddb.update_item(
+        TableName=os.environ["LEDGER_TABLE"], Key={"object_version": {"S": object_version}},
+        UpdateExpression="SET #status=:status, rejection_reason=:reason, ingestion_id=:ingestion_id",
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues={
+            ":status": {"S": "REJECTED"}, ":reason": {"S": reason[:500]},
+            ":ingestion_id": {"S": metadata.get("ingestion-id", "unknown")},
+        },
+    )
+
+
+def reject(bucket, key, version, metadata, reason):
+    quarantine(bucket, key, version, reason)
+    record_rejection(bucket, key, version, metadata, reason)
+    raise PermanentIngestionError(reason)
+
+
 def process(s3_event):
     bucket = s3_event["s3"]["bucket"]["name"]
     key = urllib.parse.unquote_plus(s3_event["s3"]["object"]["key"])
@@ -36,14 +60,14 @@ def process(s3_event):
         raise ValueError("evento fora do Bronze versionado")
     head = s3.head_object(Bucket=bucket, Key=key, VersionId=version)
     metadata = head.get("Metadata", {})
-    required = ["ingestion-id", "sha256", "source-system", "schema-version"]
+    required = ["ingestion-id", "sha256", "source-system", "schema-version", "expected-size"]
     if any(not metadata.get(field) for field in required):
-        quarantine(bucket, key, version, "metadados obrigatórios ausentes")
-        raise ValueError("metadados obrigatórios ausentes")
+        reject(bucket, key, version, metadata, "metadados obrigatórios ausentes")
+    if not metadata["expected-size"].isdigit() or int(metadata["expected-size"]) != head.get("ContentLength"):
+        reject(bucket, key, version, metadata, "tamanho do objeto divergente")
     actual = sha256_object(bucket, key, version)
     if actual != metadata["sha256"].lower():
-        quarantine(bucket, key, version, "sha256 divergente")
-        raise ValueError("sha256 divergente")
+        reject(bucket, key, version, metadata, "sha256 divergente")
     object_version = f"{bucket}/{key}/{version}"
     manifest_key = f"manifestos/bronze/ingestion-{metadata['ingestion-id']}.json"
     manifest = {"layer": "bronze", "ingestion_id": metadata["ingestion-id"], "source_system": metadata["source-system"],
@@ -69,8 +93,17 @@ def handler(event, _context):
     for record in event["Records"]:
         try:
             envelope = json.loads(record["body"])
-            for item in envelope.get("Records", []):
-                process(item)
         except Exception:
+            failures.append({"itemIdentifier": record["messageId"]})
+            continue
+        retry_record = False
+        for item in envelope.get("Records", []):
+            try:
+                process(item)
+            except PermanentIngestionError as exc:
+                print(json.dumps({"event": "ingestion_rejected", "message_id": record["messageId"], "reason": str(exc)}))
+            except Exception:
+                retry_record = True
+        if retry_record:
             failures.append({"itemIdentifier": record["messageId"]})
     return {"batchItemFailures": failures}

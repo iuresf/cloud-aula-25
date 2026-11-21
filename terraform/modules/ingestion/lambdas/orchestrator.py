@@ -10,9 +10,23 @@ sfn = boto3.client("stepfunctions")
 ddb = boto3.client("dynamodb")
 
 
+def mark_retry(message, reason):
+    """Expõe a última causa antes de devolver a mensagem à fila ready."""
+    object_version = message.get("object_version")
+    if not object_version:
+        return
+    ddb.update_item(
+        TableName=os.environ["LEDGER_TABLE"], Key={"object_version": {"S": object_version}},
+        UpdateExpression="SET #status=:status, orchestration_error=:reason",
+        ExpressionAttributeNames={"#status": "status"},
+        ExpressionAttributeValues={":status": {"S": "ORCHESTRATION_RETRY"}, ":reason": {"S": reason[:500]}},
+    )
+
+
 def handler(event, _context):
     failures = []
     for record in event["Records"]:
+        message = {}
         try:
             message = json.loads(record["body"])
             ingestion_id = message["ingestion_id"]
@@ -34,6 +48,11 @@ def handler(event, _context):
             ddb.update_item(TableName=os.environ["LEDGER_TABLE"], Key={"object_version": {"S": message["object_version"]}},
                             UpdateExpression=expression, ExpressionAttributeNames={"#status": "status"},
                             ExpressionAttributeValues=values)
-        except Exception:
+        except Exception as exc:
+            try:
+                mark_retry(message, str(exc))
+            except Exception:
+                pass
+            print(json.dumps({"event": "orchestration_retry", "message_id": record["messageId"], "reason": str(exc)}))
             failures.append({"itemIdentifier": record["messageId"]})
     return {"batchItemFailures": failures}
