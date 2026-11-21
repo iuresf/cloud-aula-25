@@ -4,6 +4,7 @@ variable "audit_bucket" { type = string }
 variable "bronze_bucket" { type = string }
 variable "function_names" { type = list(string) }
 variable "dlq_names" { type = list(string) }
+variable "state_machine_arn" { type = string }
 
 resource "aws_cloudwatch_log_group" "ingestion" {
   for_each          = toset(var.function_names)
@@ -36,13 +37,32 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   dimensions          = { FunctionName = each.value }
   treat_missing_data  = "notBreaching"
 }
+resource "aws_cloudwatch_metric_alarm" "step_function_failures" {
+  alarm_name          = "${var.project}-etl-executions-failed"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ExecutionsFailed"
+  namespace           = "AWS/States"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  dimensions          = { StateMachineArn = var.state_machine_arn }
+  treat_missing_data  = "notBreaching"
+}
 resource "aws_cloudwatch_dashboard" "lakehouse" {
   dashboard_name = "${var.project}-lakehouse"
-  dashboard_body = jsonencode({ widgets = [{
-    type = "metric", x = 0, y = 0, width = 24, height = 6,
-    properties = { title = "Falhas de ingestão", view = "timeSeries", region = var.region, stat = "Sum",
-    metrics = [for name in var.function_names : ["AWS/Lambda", "Errors", "FunctionName", name]] }
-  }] })
+  dashboard_body = jsonencode({ widgets = [
+    {
+      type = "metric", x = 0, y = 0, width = 12, height = 6,
+      properties = { title = "Falhas de ingestão", view = "timeSeries", region = var.region, stat = "Sum",
+      metrics = [for name in var.function_names : ["AWS/Lambda", "Errors", "FunctionName", name]] }
+    },
+    {
+      type = "metric", x = 12, y = 0, width = 12, height = 6,
+      properties = { title = "Execuções ETL com falha", view = "timeSeries", region = var.region, stat = "Sum",
+      metrics = [["AWS/States", "ExecutionsFailed", "StateMachineArn", var.state_machine_arn]] }
+    }
+  ] })
 }
 resource "aws_s3_bucket_policy" "audit" {
   bucket = var.audit_bucket

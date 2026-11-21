@@ -90,6 +90,7 @@ SQS ready → Lambda orchestrator → Step Functions → Glue Silver → Glue Go
 3. O upload no prefixo `ingestion/` gera um evento S3 na fila. A Lambda `receipt` calcula novamente o SHA-256, valida metadados, grava o manifesto Bronze e registra `bucket/chave/VersionId` no DynamoDB.
 4. O evento pronto segue à segunda fila. A Lambda `orchestrator` inicia a Step Functions com nome derivado do `ingestion_id`; reentregas não iniciam outra execução com o mesmo nome.
 5. Falhas de contrato copiam o arquivo para `Quarantine`; falhas transitórias são reenviadas pela SQS e seguem para a DLQ após cinco tentativas. Alarmes observam DLQs e erros de Lambda.
+6. Na Step Functions, Silver e Gold tentam novamente até três vezes para erros transitórios do Glue e timeout, com espera exponencial de 15 s. Qualquer erro restante é capturado: uma falha Silver encerra a execução como `FAILED` sem iniciar Gold; uma falha Gold encerra como `FAILED`, preservando o snapshot Iceberg já publicado por Silver. O alarme `ExecutionsFailed` registra essas execuções no CloudWatch.
 
 O cliente usa todos os cabeçalhos devolvidos pela API, inclusive `x-amz-checksum-sha256`; assim o S3 verifica o checksum durante o upload e a Lambda `receipt` o recalcula sobre o objeto versionado. O contrato de entrada é deliberadamente mínimo: para executar um refresh dimensional completo, envie o conjunto de datasets esperado pelo job Silver usando o fluxo de lote da aplicação produtora. O `runner.py` continua sendo o caminho de carga demonstrativa da aula.
 
@@ -168,7 +169,7 @@ Use console S3 para observar arquivos, Glue Catalog para observar `metadata_loca
 
 ## Falhas e limites didáticos
 
-- Falha no job Silver **antes de publicar**: arquivos preparatórios não devem mudar o snapshot atual da tabela. O cenário `fail-demo` insere um pagamento inválido, espera falha controlada e remove a chave (um delete marker, se Bronze versionada). Verifique o Step Functions e os snapshots depois.
+- Falha no job Silver **antes de publicar**: arquivos preparatórios não devem mudar o snapshot atual da tabela. O cenário `fail-demo` insere um pagamento inválido, espera falha controlada e remove a chave (um delete marker, se Bronze versionada). A Step Functions aplica as retentativas transitórias e então encerra em `FalhaSilver`, sem executar Gold. Verifique a execução, `$.error` e os snapshots depois.
 - Falha Gold **após** alguns commits: tabelas dimensionais podem ter versões distintas. Não prometa atomicidade global.
 - `replay` reenvia bytes e ganha uma nova versão de objeto Bronze; o Iceberg no entanto mantém linhas de negócio sem duplicação por chave. Separar rastreabilidade física de idempotência lógica.
 - Reprocessamento lê todos os arquivos da Bronze (incrementalidade **lógica** por MERGE, não CDC incremental de leitura). Em produção prefira bookmarks, manifestos por lote, validação de eventos e compactação planejada.

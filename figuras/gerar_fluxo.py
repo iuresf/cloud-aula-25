@@ -74,7 +74,7 @@ sections = [
         ("S3 object", "aws_s3_object.script[gold]", "Script Gold", ["results/jobs/gold.py"]),
         ("AWS Glue", "aws_glue_job.job[silver]", "Job a25-iceberg-silver", ["Glue 4 / Iceberg / 2 workers", "MERGE e validação Bronze → Silver"]),
         ("AWS Glue", "aws_glue_job.job[gold]", "Job a25-iceberg-gold", ["dimensões e fatos", "MERGE Silver → Gold"]),
-        ("AWS Step Functions", "aws_sfn_state_machine.etl", "State machine a25-iceberg-etl", ["integração Glue .sync", "Silver → Gold"]),
+        ("AWS Step Functions", "aws_sfn_state_machine.etl", "State machine a25-iceberg-etl", ["Glue .sync; retry transitório", "Catch encerra execução com FAILED"]),
         ("Amazon Athena", "aws_athena_workgroup.this", "Workgroup técnico", ["engine 3; saída results/athena/"]),
         ("Amazon Athena", "aws_athena_workgroup.consumer", "Workgroup consumidor", ["engine 3; saída results/athena-consumer/"]),
         ("Athena named query", "aws_athena_named_query.vendas_mensais_v1", "Consulta certificada", ["vendas mensais por região e canal"]),
@@ -120,7 +120,8 @@ sections = [
         ("CloudWatch Alarm", "aws_cloudwatch_metric_alarm.dlq_messages[object_dlq]", "Alarme object-events DLQ", ["ApproximateNumberOfMessagesVisible > 0"]),
         ("CloudWatch Alarm", "aws_cloudwatch_metric_alarm.dlq_messages[ready_dlq]", "Alarme ready DLQ", ["ApproximateNumberOfMessagesVisible > 0"]),
         ("CloudWatch Alarm", "aws_cloudwatch_metric_alarm.lambda_errors[api] + [receipt] + [orchestrator]", "Alarmes Lambda Errors", ["um alarme por Lambda; Errors > 0"]),
-        ("CloudWatch", "aws_cloudwatch_dashboard.lakehouse", "Dashboard lakehouse", ["métricas de erro das 3 Lambdas"]),
+        ("CloudWatch Alarm", "aws_cloudwatch_metric_alarm.step_function_failures", "Alarme Step Functions", ["ExecutionsFailed > 0"]),
+        ("CloudWatch", "aws_cloudwatch_dashboard.lakehouse", "Dashboard lakehouse", ["erros Lambda e execuções ETL falhas"]),
         ("S3 bucket policy", "aws_s3_bucket_policy.audit", "Política do Audit", ["CloudTrail GetBucketAcl / PutObject"]),
         ("AWS CloudTrail", "aws_cloudtrail.lakehouse", "Trilha a25-iceberg-audit", ["eventos gerenciais + objetos Bronze", "validação de arquivos de log"]),
         ("S3 object", "aws_s3_object.script", "Script de manutenção", ["results/jobs/maintenance.py"]),
@@ -140,7 +141,7 @@ sections = [
     ]),
 ]
 
-height = 930 + sum(90 + ((len(items) + 2) // 3) * 160 for _, items in sections)
+height = 1030 + sum(90 + ((len(items) + 2) // 3) * 160 for _, items in sections)
 add(f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{height}" viewBox="0 0 {W} {height}" role="img" aria-labelledby="title desc">')
 add('<title id="title">Inventário completo do Terraform do lakehouse da aula 25</title>')
 add('<desc id="desc">Fluxo completo de ingestão, caminhos de erro, DLQs, quarentena e inventário de cada recurso ou expansão for_each declarada no Terraform.</desc>')
@@ -148,7 +149,7 @@ add('<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="
 rect(0, 0, W, height, "#f4f8fc", "none", 0)
 text(70, 70, "Aula 25 · Inventário completo do Terraform Lakehouse", 39, 750)
 text(70, 110, "Cada cartão mapeia diretamente um recurso declarado; expansões for_each informam todas as instâncias.", 19, 400, "#557087")
-rect(70, 140, 2380, 650, "#e8f1fa", "#c5d7e8", 18)
+rect(70, 140, 2380, 750, "#e8f1fa", "#c5d7e8", 18)
 text(95, 180, "FLUXO OPERACIONAL — CAMINHO PRINCIPAL E DESVIOS", 19, 750, "#51708c")
 text(95, 210, "Seta azul: processamento normal. Seta vermelha tracejada: rejeição ou erro. Seta laranja tracejada: retentativa e retenção em DLQ.", 16, 450, "#557087")
 
@@ -188,7 +189,7 @@ arrow(905, 527, 1570, 527, "alarme", "#d98d21", "5 6")
 arrow(1250, 527, 1570, 527, "alarme", "#d98d21", "5 6")
 
 flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente ingestion_id", icon_name="lambda")
-flow_node(700, 640, 280, "Step Functions", "Silver .sync → Gold .sync", icon_name="step-functions")
+flow_node(700, 640, 280, "Step Functions", "retry transitório + Catch", icon_name="step-functions")
 flow_node(1065, 640, 250, "Glue Silver", "MERGE por chave", icon_name="glue")
 flow_node(1400, 640, 250, "Glue Gold", "dimensões e fatos", icon_name="glue")
 flow_node(1735, 640, 250, "S3 Gold + Catalog", "snapshots Iceberg", icon_name="s3")
@@ -199,9 +200,16 @@ arrow(980, 681, 1060, 681, "run Silver")
 arrow(1315, 681, 1395, 681, "run Gold")
 arrow(1650, 681, 1730, 681, "commit")
 arrow(1985, 681, 2065, 681, "consulta")
-text(95, 760, "Reprocessamento: mensagens nas DLQs devem ser investigadas e reenviadas manualmente após a causa ser corrigida. Quarantine preserva o original rejeitado e a razão.", 16, 500, "#506983")
+flow_node(95, 755, 320, "Falha Silver", "Gold não inicia; execução FAILED", "#fff2f2", "#d77878", "step-functions")
+flow_node(480, 755, 320, "Falha Gold", "Silver permanece em snapshot Iceberg", "#fff2f2", "#d77878", "step-functions")
+flow_node(865, 755, 345, "CloudWatch: ExecutionsFailed", "alarme e investigação por execution ARN", "#fff8e8", "#d99a35", "cloudwatch")
+arrow(1190, 722, 255, 750, "Catch após retries", "#c84d4d", "8 7")
+arrow(1525, 722, 640, 750, "Catch após retries", "#c84d4d", "8 7")
+arrow(415, 796, 860, 796, "métrica de falha", "#d98d21", "5 6")
+arrow(800, 796, 860, 796, "métrica de falha", "#d98d21", "5 6")
+text(95, 860, "Reprocessamento: mensagens nas DLQs devem ser investigadas e reenviadas manualmente após a causa ser corrigida. Quarantine preserva o original rejeitado e a razão.", 16, 500, "#506983")
 
-y = 865
+y = 965
 for section, items in sections:
     text(70, y, section, 20, 750, "#56718b")
     y += 26

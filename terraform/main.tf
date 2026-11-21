@@ -51,13 +51,14 @@ module "ingestion" {
   cognito_domain_prefix = var.cognito_domain_prefix
 }
 module "observability" {
-  source         = "./modules/observability"
-  project        = var.project
-  region         = var.region
-  audit_bucket   = module.storage.buckets["audit"]
-  bronze_bucket  = module.storage.buckets["bronze"]
-  function_names = module.ingestion.function_names
-  dlq_names      = module.ingestion.dlq_names
+  source            = "./modules/observability"
+  project           = var.project
+  region            = var.region
+  audit_bucket      = module.storage.buckets["audit"]
+  bronze_bucket     = module.storage.buckets["bronze"]
+  function_names    = module.ingestion.function_names
+  dlq_names         = module.ingestion.dlq_names
+  state_machine_arn = module.orchestration.state_machine_arn
 }
 module "maintenance" {
   source   = "./modules/maintenance"
