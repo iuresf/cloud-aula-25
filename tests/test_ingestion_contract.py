@@ -1,4 +1,4 @@
-"""Contratos locais da Lambda de recebimento; não chama serviços AWS."""
+"""Simula API, eventos S3/SQS e dependências AWS das Lambdas; não chama a conta AWS."""
 import hashlib
 import io
 import importlib.util
@@ -7,6 +7,8 @@ import os
 import sys
 import types
 from pathlib import Path
+
+import pytest
 
 
 os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
@@ -93,14 +95,17 @@ def test_api_returns_503_when_presign_dependency_fails(monkeypatch):
 
 
 class ReceiptS3:
-    def __init__(self, payload=b"abc", expected_size=None):
+    def __init__(self, payload=b"abc", expected_size=None, metadata_override=None):
         self.payload = payload
         self.expected_size = expected_size if expected_size is not None else len(payload)
+        self.metadata_override = metadata_override or {}
         self.copies = []
 
     def head_object(self, **_kwargs):
-        return {"Metadata": {"ingestion-id": "11111111-1111-1111-1111-111111111111", "sha256": hashlib.sha256(self.payload).hexdigest(),
-                              "source-system": "erp", "schema-version": "1", "expected-size": str(self.expected_size)},
+        metadata = {"ingestion-id": "11111111-1111-1111-1111-111111111111", "sha256": hashlib.sha256(self.payload).hexdigest(),
+                    "source-system": "erp", "schema-version": "1", "expected-size": str(self.expected_size)}
+        metadata.update(self.metadata_override)
+        return {"Metadata": metadata,
                 "ContentLength": len(self.payload), "ContentType": "text/csv"}
 
     def get_object(self, **_kwargs):
@@ -141,8 +146,16 @@ def receipt_event():
     return {"Records": [{"messageId": "receipt-1", "body": json.dumps({"Records": [s3_event]})}]}
 
 
-def test_receipt_quarantines_size_violation_and_acknowledges_message(monkeypatch):
-    s3, ddb = ReceiptS3(expected_size=99), DdbStub()
+@pytest.mark.parametrize(("file_name", "expected_size", "metadata_override", "reason"), [
+    ("metadados_ausentes.csv", None, {"expected-size": None}, "metadados obrigatórios ausentes"),
+    ("tamanho_divergente.csv", 999, {}, "tamanho do objeto divergente"),
+    ("hash_divergente.csv", None, {"sha256": "0" * 64}, "sha256 divergente"),
+])
+def test_receipt_quarantines_permanent_error_files_and_acknowledges_message(
+    monkeypatch, file_name, expected_size, metadata_override, reason
+):
+    payload = (ROOT / "dados" / "erros" / file_name).read_bytes()
+    s3, ddb = ReceiptS3(payload=payload, expected_size=expected_size, metadata_override=metadata_override), DdbStub()
     monkeypatch.setattr(receipt, "s3", s3)
     monkeypatch.setattr(receipt, "ddb", ddb)
     monkeypatch.setattr(receipt, "sqs", SqsStub())
@@ -150,7 +163,7 @@ def test_receipt_quarantines_size_violation_and_acknowledges_message(monkeypatch
     assert result == {"batchItemFailures": []}
     assert len(s3.copies) == 1
     assert ddb.updates[0]["ExpressionAttributeValues"][":status"]["S"] == "REJECTED"
-    assert "tamanho" in ddb.updates[0]["ExpressionAttributeValues"][":reason"]["S"]
+    assert ddb.updates[0]["ExpressionAttributeValues"][":reason"]["S"] == reason
 
 
 def test_receipt_retries_operational_failure(monkeypatch):

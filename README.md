@@ -96,6 +96,22 @@ O cliente usa todos os cabeçalhos devolvidos pela API, inclusive `x-amz-checksu
 
 O `runner.py` continua existindo como caminho didático/local. Para produção, a API substitui o upload direto feito pelo runner.
 
+### Testes de erro de envio
+
+As massas em [`dados/erros`](dados/erros/) exercitam o mesmo fluxo que ocorre após o upload ao Bronze. Os testes montam um evento S3 dentro de uma mensagem SQS, passam o objeto versionado à Lambda `receipt` e verificam a saída no ledger e na Quarantine:
+
+| Massa | Erro simulado | Resultado esperado |
+|---|---|---|
+| `metadados_ausentes.csv` | `expected-size` ausente | Quarantine + `REJECTED`; mensagem confirmada |
+| `tamanho_divergente.csv` | tamanho informado diferente do objeto | Quarantine + `REJECTED`; mensagem confirmada |
+| `hash_divergente.csv` | SHA-256 informado diferente dos bytes | Quarantine + `REJECTED`; mensagem confirmada |
+
+```bash
+pytest tests/test_ingestion_contract.py -q
+```
+
+O mesmo arquivo de teste também cobre `400` para payload inválido, `503` para falha ao gerar URL pré-assinada, reentrega por indisponibilidade da fila `ready` e a gravação de `ORCHESTRATION_RETRY` quando a Step Functions não aceita uma execução.
+
 ### Operação e retenção
 
 - O CloudTrail grava eventos de gerenciamento e de objetos Bronze no bucket Audit, com validação de integridade dos logs.

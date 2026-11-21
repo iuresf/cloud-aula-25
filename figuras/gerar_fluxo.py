@@ -93,9 +93,9 @@ sections = [
         ("Amazon SQS", "aws_sqs_queue.ready", "Fila ready", ["entrega para orquestração"]),
         ("Amazon SQS", "aws_sqs_queue.ready_dlq", "DLQ ready", ["retenção 14 dias; 5 tentativas"]),
         ("SQS policy", "aws_sqs_queue_policy.object_events", "Política S3 → SQS", ["permite s3.amazonaws.com SendMessage"]),
-        ("AWS Lambda", "aws_lambda_function.api", "Lambda API ingestion", ["valida contrato e cria URL pré-assinada"]),
-        ("AWS Lambda", "aws_lambda_function.receipt", "Lambda Receipt", ["recalcula SHA-256; manifesto; quarentena"]),
-        ("AWS Lambda", "aws_lambda_function.orchestrator", "Lambda Orchestrator", ["inicia Step Functions por ingestion_id"]),
+        ("AWS Lambda", "aws_lambda_function.api", "Lambda API ingestion", ["valida contrato, SHA e tamanho", "URL pré-assinada; 400/503"]),
+        ("AWS Lambda", "aws_lambda_function.receipt", "Lambda Receipt", ["recalcula SHA/tamanho; manifesto", "REJECTED → Quarantine; operação → retry"]),
+        ("AWS Lambda", "aws_lambda_function.orchestrator", "Lambda Orchestrator", ["inicia Step Functions por ingestion_id", "falha → ORCHESTRATION_RETRY"]),
         ("Lambda mapping", "aws_lambda_event_source_mapping.receipt", "SQS object-events → Receipt", ["batch 10; falhas parciais"]),
         ("Lambda mapping", "aws_lambda_event_source_mapping.orchestrator", "SQS ready → Orchestrator", ["batch 10; falhas parciais"]),
     ]),
@@ -151,7 +151,7 @@ text(70, 70, "Aula 25 · Inventário completo do Terraform Lakehouse", 39, 750)
 text(70, 110, "Cada cartão mapeia diretamente um recurso declarado; expansões for_each informam todas as instâncias.", 19, 400, "#557087")
 rect(70, 140, 2380, 750, "#e8f1fa", "#c5d7e8", 18)
 text(95, 180, "FLUXO OPERACIONAL — CAMINHO PRINCIPAL E DESVIOS", 19, 750, "#51708c")
-text(95, 210, "Seta azul: processamento normal. Seta vermelha tracejada: rejeição ou erro. Seta laranja tracejada: retentativa e retenção em DLQ.", 16, 450, "#557087")
+text(95, 210, "Seta azul: processamento normal. Vermelha: rejeição permanente confirmada. Laranja: falha operacional, retentativa e DLQ.", 16, 450, "#557087")
 
 flow_node(95, 260, 230, "Produtor externo", "client_credentials")
 flow_node(370, 260, 230, "Cognito", "token + scope write", icon_name="cognito")

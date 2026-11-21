@@ -7,7 +7,7 @@
 <text x="70" y="110" font-size="19" font-weight="400" fill="#557087">Cada cartão mapeia diretamente um recurso declarado; expansões for_each informam todas as instâncias.</text>
 <rect x="70" y="140" width="2380" height="750" rx="18" fill="#e8f1fa" stroke="#c5d7e8" stroke-width="2" stroke-dasharray=""/>
 <text x="95" y="180" font-size="19" font-weight="750" fill="#51708c">FLUXO OPERACIONAL — CAMINHO PRINCIPAL E DESVIOS</text>
-<text x="95" y="210" font-size="16" font-weight="450" fill="#557087">Seta azul: processamento normal. Seta vermelha tracejada: rejeição ou erro. Seta laranja tracejada: retentativa e retenção em DLQ.</text>
+<text x="95" y="210" font-size="16" font-weight="450" fill="#557087">Seta azul: processamento normal. Vermelha: rejeição permanente confirmada. Laranja: falha operacional, retentativa e DLQ.</text>
 <rect x="95" y="260" width="230" height="82" rx="14" fill="#ffffff" stroke="#84a8c8" stroke-width="2" stroke-dasharray=""/>
 <text x="110" y="292" font-size="17" font-weight="750" fill="#243b53">Produtor externo</text>
 <text x="110" y="318" font-size="14" font-weight="450" fill="#506983">client_credentials</text>
@@ -395,14 +395,16 @@
 <rect x="1558" y="2902" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
 <text x="1572" y="2922" font-size="13" font-weight="750" fill="#245947">TF</text>
 <text x="895" y="2969" font-size="14" font-weight="650" fill="#38546f">aws_lambda_function.api</text>
-<text x="895" y="2995" font-size="15" font-weight="400" fill="#506983">valida contrato e cria URL pré-assinada</text>
+<text x="895" y="2995" font-size="15" font-weight="400" fill="#506983">valida contrato, SHA e tamanho</text>
+<text x="895" y="3016" font-size="15" font-weight="400" fill="#506983">URL pré-assinada; 400/503</text>
 <rect x="1680" y="2887" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
 <text x="1700" y="2916" font-size="15" font-weight="700" fill="#54708b">AWS Lambda</text>
 <text x="1700" y="2944" font-size="21" font-weight="750" fill="#243b53">Lambda Receipt</text>
 <rect x="2363" y="2902" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
 <text x="2377" y="2922" font-size="13" font-weight="750" fill="#245947">TF</text>
 <text x="1700" y="2969" font-size="14" font-weight="650" fill="#38546f">aws_lambda_function.receipt</text>
-<text x="1700" y="2995" font-size="15" font-weight="400" fill="#506983">recalcula SHA-256; manifesto; quarentena</text>
+<text x="1700" y="2995" font-size="15" font-weight="400" fill="#506983">recalcula SHA/tamanho; manifesto</text>
+<text x="1700" y="3016" font-size="15" font-weight="400" fill="#506983">REJECTED → Quarantine; operação → retry</text>
 <rect x="70" y="3047" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
 <text x="90" y="3076" font-size="15" font-weight="700" fill="#54708b">AWS Lambda</text>
 <text x="90" y="3104" font-size="21" font-weight="750" fill="#243b53">Lambda Orchestrator</text>
@@ -410,6 +412,7 @@
 <text x="767" y="3082" font-size="13" font-weight="750" fill="#245947">TF</text>
 <text x="90" y="3129" font-size="14" font-weight="650" fill="#38546f">aws_lambda_function.orchestrator</text>
 <text x="90" y="3155" font-size="15" font-weight="400" fill="#506983">inicia Step Functions por ingestion_id</text>
+<text x="90" y="3176" font-size="15" font-weight="400" fill="#506983">falha → ORCHESTRATION_RETRY</text>
 <rect x="875" y="3047" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
 <text x="895" y="3076" font-size="15" font-weight="700" fill="#54708b">Lambda mapping</text>
 <text x="895" y="3104" font-size="21" font-weight="750" fill="#243b53">SQS object-events → Receipt</text>

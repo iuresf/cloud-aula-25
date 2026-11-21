@@ -21,6 +21,12 @@ O fluxo OAuth2 `client_credentials` obteve token Cognito e `POST /v1/ingestions`
 
 A execução foi interrompida antes do Gold porque o teste enviou somente um dataset; o job dimensional exige o conjunto completo de fontes. A infraestrutura foi removida após o teste.
 
+## Validação posterior do fluxo de erro de ingestão
+
+Após a avaliação da implantação, o contrato de envio foi reforçado com `size_bytes` e a validação de chegada passou a distinguir erro permanente de falha operacional. As massas versionadas em `dados/erros/` simulam `expected-size` ausente, tamanho divergente e SHA-256 divergente. Em cada cenário, o teste local envia um evento S3 encapsulado em SQS à Lambda `receipt`, confirma a cópia à Quarantine, o estado `REJECTED` e a razão no DynamoDB, sem devolver a mensagem à fila. A indisponibilidade de SQS e da Step Functions é testada como retentativa, para que a política das DLQs possa atuar.
+
+Esta validação foi executada contra o código-fonte das Lambdas que o Terraform empacota, sem recriar a infraestrutura AWS Academy já destruída. Uma nova implantação deve executar `pytest tests/test_ingestion_contract.py -q` antes do `terraform apply` e repetir os três envios pela API para registrar evidências AWS atuais.
+
 ## Respostas observadas no Athena
 
 | Cenário | Itens | Receita total | Receita de P1042 |
