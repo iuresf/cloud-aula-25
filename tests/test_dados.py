@@ -31,3 +31,22 @@ def test_payment_history():
 
 if __name__=='__main__':
     test_grain_totals();test_payment_history();print('Dados validados offline')
+
+
+def test_receita_por_estado_de_pagamentos():
+    pedidos={x['pedido_id']:x for x in rows('pedidos')}
+    itens=rows('itens')
+    def receita(paths):
+        history={}
+        for path in paths:
+            for event in (json.loads(line) for line in path.read_text().splitlines()):
+                current=history.get(event['pedido_id'])
+                if current is None or (event['atualizado_em'],event['evento_pagamento_id'])>(current['atualizado_em'],current['evento_pagamento_id']):
+                    history[event['pedido_id']]=event
+        return sum((Decimal(item['quantidade'])*Decimal(item['preco_unitario'].replace(',','.'))
+                    for item in itens if pedidos[item['pedido_id']]['status']=='pago'
+                    and history.get(item['pedido_id'],{}).get('resultado')=='aprovado'),Decimal('0'))
+    initial=ROOT/'dados/inicial/pagamentos/lote_001.jsonl'
+    delta=ROOT/'dados/delta/pagamentos/lote_002.jsonl'
+    assert receita([initial])==Decimal('249.70')
+    assert receita([initial,delta])==Decimal('198.80')

@@ -46,12 +46,29 @@ def record_rejection(bucket, key, version, metadata, reason):
             ":ingestion_id": {"S": metadata.get("ingestion-id", "unknown")},
         },
     )
+    if metadata.get("batch-id") and metadata.get("ingestion-id"):
+        boto3.resource("dynamodb").Table(os.environ["BATCH_TABLE"]).update_item(
+            Key={"batch_id": metadata["batch-id"], "record_id": f"UPLOAD#{metadata['ingestion-id']}"},
+            UpdateExpression="SET #s=:rejected, rejection_reason=:reason",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={":rejected": "REJECTED", ":reason": reason[:500]})
 
 
 def reject(bucket, key, version, metadata, reason):
     quarantine(bucket, key, version, reason)
     record_rejection(bucket, key, version, metadata, reason)
     raise PermanentIngestionError(reason)
+
+
+def record_received(object_version, metadata):
+    try:
+        ddb.put_item(TableName=os.environ["LEDGER_TABLE"], Item={
+            "object_version": {"S": object_version}, "ingestion_id": {"S": metadata["ingestion-id"]},
+            "batch_id": {"S": metadata["batch-id"]}, "status": {"S": "RECEIVED"}},
+            ConditionExpression="attribute_not_exists(object_version)")
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
 
 
 def process(s3_event):
@@ -62,32 +79,42 @@ def process(s3_event):
         raise ValueError("evento fora do Bronze versionado")
     head = s3.head_object(Bucket=bucket, Key=key, VersionId=version)
     metadata = head.get("Metadata", {})
-    required = ["ingestion-id", "sha256", "source-system", "schema-version", "expected-size"]
+    required = ["ingestion-id", "batch-id", "dataset-type", "sha256", "source-system", "schema-version", "expected-size"]
     if any(not metadata.get(field) for field in required):
         reject(bucket, key, version, metadata, "metadados obrigatórios ausentes")
+    dataset = metadata["dataset-type"]
+    if metadata["schema-version"] != "1":
+        reject(bucket, key, version, metadata, "schema_version não suportado")
+    if dataset not in {"pedidos", "itens", "clientes", "produtos", "pagamentos", "eventos"} or not key.startswith(f"ingestion/{dataset}/"):
+        reject(bucket, key, version, metadata, "dataset_type incompatível")
     if not metadata["expected-size"].isdigit() or int(metadata["expected-size"]) != head.get("ContentLength"):
         reject(bucket, key, version, metadata, "tamanho do objeto divergente")
     actual = sha256_object(bucket, key, version)
     if actual != metadata["sha256"].lower():
         reject(bucket, key, version, metadata, "sha256 divergente")
     object_version = f"{bucket}/{key}/{version}"
-    manifest_key = f"manifestos/bronze/ingestion-{metadata['ingestion-id']}.json"
-    manifest = {"layer": "bronze", "ingestion_id": metadata["ingestion-id"], "source_system": metadata["source-system"],
-                "schema_version": metadata["schema-version"], "created_at": datetime.now(timezone.utc).isoformat(),
-                "files": [{"s3_key": key, "version_id": version, "sha256": actual, "content_type": head.get("ContentType")}]} 
-    s3.put_object(Bucket=os.environ["RESULTS_BUCKET"], Key=manifest_key, Body=json.dumps(manifest, indent=2).encode(),
-                  ContentType="application/json", Metadata={"sha256": hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()})
-    try:
-        ddb.put_item(TableName=os.environ["LEDGER_TABLE"], Item={"object_version": {"S": object_version},
-                     "ingestion_id": {"S": metadata["ingestion-id"]}, "manifest_key": {"S": manifest_key}, "status": {"S": "RECEIVED"}},
-                     ConditionExpression="attribute_not_exists(object_version)")
-    except ClientError as exc:
-        if exc.response["Error"]["Code"] != "ConditionalCheckFailedException":
-            raise
-        existing = ddb.get_item(TableName=os.environ["LEDGER_TABLE"], Key={"object_version": {"S": object_version}}).get("Item", {})
-        if existing.get("status", {}).get("S") == "ORCHESTRATED":
-            return
-    sqs.send_message(QueueUrl=os.environ["READY_QUEUE_URL"], MessageBody=json.dumps({"ingestion_id": metadata["ingestion-id"], "bronze_manifest": manifest_key, "object_version": object_version}))
+    table = boto3.resource("dynamodb").Table(os.environ["BATCH_TABLE"])
+    upload_key = {"batch_id": metadata["batch-id"], "record_id": f"UPLOAD#{metadata['ingestion-id']}"}
+    if table.get_item(Key={"batch_id": metadata["batch-id"], "record_id": f"FILE#{object_version}"}, ConsistentRead=True).get("Item"):
+        record_received(object_version, metadata)
+        return
+    upload = table.get_item(Key=upload_key, ConsistentRead=True).get("Item")
+    if not upload or upload["s3_key"] != key or upload["sha256"] != actual:
+        reject(bucket, key, version, metadata, "upload sem sessão válida")
+    meta = table.get_item(Key={"batch_id": metadata["batch-id"], "record_id": "META"}, ConsistentRead=True).get("Item")
+    if not meta or meta["status"] != "WAITING_FOR_BATCH":
+        reject(bucket, key, version, metadata, "lote inexistente ou encerrado")
+    table.put_item(Item={"batch_id": metadata["batch-id"], "record_id": f"FILE#{object_version}",
+                         "ingestion_id": metadata["ingestion-id"], "dataset_type": dataset,
+                         "source_system": metadata["source-system"], "schema_version": metadata["schema-version"],
+                         "s3_key": key, "version_id": version, "sha256": actual,
+                         "size_bytes": head["ContentLength"], "status": "RECEIVED"},
+                   ConditionExpression="attribute_not_exists(record_id)")
+    table.update_item(Key=upload_key, UpdateExpression="SET #s=:received",
+                      ExpressionAttributeNames={"#s": "status"},
+                      ExpressionAttributeValues={":received": "RECEIVED"})
+
+    record_received(object_version, metadata)
 
 
 def handler(event, _context):

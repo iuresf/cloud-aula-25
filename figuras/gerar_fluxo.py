@@ -82,7 +82,9 @@ sections = [
         ("S3 object", "aws_s3_object.script[gold]", "Script Gold", ["results/jobs/gold.py"]),
         ("AWS Glue", "aws_glue_job.job[silver]", "Job a25-iceberg-silver", ["Glue 4 / Iceberg / 2 workers", "MERGE e validação Bronze → Silver"]),
         ("AWS Glue", "aws_glue_job.job[gold]", "Job a25-iceberg-gold", ["dimensões e fatos", "MERGE Silver → Gold"]),
-        ("AWS Step Functions", "aws_sfn_state_machine.etl", "State machine a25-iceberg-etl", ["Glue .sync; retry transitório", "Catch encerra execução com FAILED"]),
+        ("AWS Step Functions", "aws_sfn_state_machine.etl", "State machine a25-iceberg-etl", ["Glue .sync; retry transitório", "Route Gold-only; Publish; redrive"]),
+        ("AWS Lambda", "aws_lambda_function.publisher", "Publish Gold", ["valida sete snapshots", "troca ponteiro PUBLISHED"]),
+        ("Amazon DynamoDB", "aws_dynamodb_table.operations", "Ledger operacional", ["run_id e bloqueio ETL", "ponteiro publicado"]),
         ("Amazon Athena", "aws_athena_workgroup.this", "Workgroup técnico", ["engine 3; saída results/athena/"]),
         ("Amazon Athena", "aws_athena_workgroup.consumer", "Workgroup consumidor", ["engine 3; saída results/athena-consumer/"]),
         ("Athena named query", "aws_athena_named_query.vendas_mensais_v1", "Consulta certificada", ["vendas mensais por região e canal"]),
@@ -91,7 +93,8 @@ sections = [
         ("Archive provider", "data.archive_file.lambda[api]", "Pacote Lambda API", ["zip de lambdas/api_ingestion.py"]),
         ("Archive provider", "data.archive_file.lambda[receipt]", "Pacote Lambda Receipt", ["zip de lambdas/receipt.py"]),
         ("Archive provider", "data.archive_file.lambda[orchestrator]", "Pacote Lambda Orchestrator", ["zip de lambdas/orchestrator.py"]),
-        ("Amazon DynamoDB", "aws_dynamodb_table.ingestion", "Ledger de ingestão", ["PK object_version; PITR", "RECEIVED / REJECTED / RETRY / ORCHESTRATED"]),
+        ("Amazon DynamoDB", "aws_dynamodb_table.ingestion", "Ledger de ingestão", ["PK object_version; PITR", "RECEIVED / REJECTED por objeto"]),
+        ("Amazon DynamoDB", "aws_dynamodb_table.batches", "Ledger de lotes", ["batch_id + record_id; PITR", "sessões pendentes e arquivos recebidos"]),
         ("Amazon Cognito", "aws_cognito_user_pool.ingestors", "User pool", ["identidade dos produtores"]),
         ("Amazon Cognito", "aws_cognito_resource_server.ingestion", "Resource server", ["scope ingestion/write"]),
         ("Amazon Cognito", "aws_cognito_user_pool_domain.ingestors", "Domínio OAuth2", ["endpoint client_credentials"]),
@@ -102,8 +105,8 @@ sections = [
         ("Amazon SQS", "aws_sqs_queue.ready_dlq", "DLQ ready", ["retenção 14 dias; 5 tentativas"]),
         ("SQS policy", "aws_sqs_queue_policy.object_events", "Política S3 → SQS", ["permite s3.amazonaws.com SendMessage"]),
         ("AWS Lambda", "aws_lambda_function.api", "Lambda API ingestion", ["valida contrato, SHA e tamanho", "URL pré-assinada; 400/503"]),
-        ("AWS Lambda", "aws_lambda_function.receipt", "Lambda Receipt", ["recalcula SHA/tamanho; manifesto", "REJECTED → Quarantine; operação → retry"]),
-        ("AWS Lambda", "aws_lambda_function.orchestrator", "Lambda Orchestrator", ["inicia Step Functions por ingestion_id", "falha → ORCHESTRATION_RETRY"]),
+        ("AWS Lambda", "aws_lambda_function.receipt", "Lambda Receipt", ["recalcula SHA/tamanho; arquivo do lote", "REJECTED → Quarantine; operação → retry"]),
+        ("AWS Lambda", "aws_lambda_function.orchestrator", "Lambda Orchestrator", ["inicia Step Functions por batch_id", "bloqueio ETL no DynamoDB"]),
         ("Lambda mapping", "aws_lambda_event_source_mapping.receipt", "SQS object-events → Receipt", ["batch 10; falhas parciais"]),
         ("Lambda mapping", "aws_lambda_event_source_mapping.orchestrator", "SQS ready → Orchestrator", ["batch 10; falhas parciais"]),
     ]),
@@ -129,11 +132,14 @@ sections = [
         ("CloudWatch Alarm", "aws_cloudwatch_metric_alarm.dlq_messages[ready_dlq]", "Alarme ready DLQ", ["ApproximateNumberOfMessagesVisible > 0"]),
         ("CloudWatch Alarm", "aws_cloudwatch_metric_alarm.lambda_errors[api] + [receipt] + [orchestrator]", "Alarmes Lambda Errors", ["um alarme por Lambda; Errors > 0"]),
         ("CloudWatch Alarm", "aws_cloudwatch_metric_alarm.step_function_failures", "Alarme Step Functions", ["ExecutionsFailed > 0"]),
+        ("AWS Lambda", "aws_lambda_function.events", "Controle de execuções", ["EventBridge → DynamoDB", "reconciliação horária"]),
+        ("Amazon EventBridge", "aws_cloudwatch_event_rule.executions", "Estados terminais", ["SUCCEEDED / FAILED / TIMED_OUT / ABORTED"]),
+        ("Amazon EventBridge", "aws_cloudwatch_event_rule.reconcile", "Reconciliação", ["rate(1 hour); sem servidor permanente"]),
         ("CloudWatch", "aws_cloudwatch_dashboard.lakehouse", "Dashboard lakehouse", ["erros Lambda e execuções ETL falhas"]),
         ("S3 bucket policy", "aws_s3_bucket_policy.audit", "Política do Audit", ["CloudTrail GetBucketAcl / PutObject"]),
         ("AWS CloudTrail", "aws_cloudtrail.lakehouse", "Trilha a25-iceberg-audit", ["eventos gerenciais + objetos Bronze", "validação de arquivos de log"]),
         ("S3 object", "aws_s3_object.script", "Script de manutenção", ["results/jobs/maintenance.py"]),
-        ("AWS Glue", "aws_glue_job.iceberg", "Job manutenção Iceberg", ["compacta; expira snapshots; remove órfãos"]),
+        ("AWS Glue", "aws_glue_job.iceberg", "Job manutenção Iceberg", ["compacta; não expira snapshots rastreados"]),
         ("Amazon EventBridge", "aws_cloudwatch_event_rule.weekly", "Regra semanal", ["cron domingo 04:00 UTC; inicialmente DISABLED"]),
         ("IAM", "aws_iam_role.scheduler", "Role EventBridge", ["criada somente se maintenance enabled"], "OPT", "#f5f2fb"),
         ("IAM", "aws_iam_role_policy.scheduler", "Política do agendador", ["glue:StartJobRun; condicional"], "OPT", "#f5f2fb"),
@@ -163,7 +169,7 @@ text(70, 70, "Aula 25 · Inventário completo do Terraform Lakehouse", 39, 750)
 text(70, 110, "Cada cartão mapeia diretamente um recurso declarado; expansões for_each informam todas as instâncias.", 19, 400, "#557087")
 rect(70, 140, 2380, 780, "#e8f1fa", "#c5d7e8", 18)
 text(95, 180, "FLUXO OPERACIONAL — CAMINHO PRINCIPAL E DESVIOS", 19, 750, "#51708c")
-text(95, 210, "Seta azul: processamento normal. Vermelha: rejeição permanente confirmada. Laranja: falha operacional, retentativa e DLQ.", 16, 450, "#557087")
+text(95, 210, "Azul: lote normal. Vermelha: rejeição. Laranja: falha, recuperação e DLQ.", 16, 450, "#557087")
 
 flow_node(95, 260, 230, "Produtor externo", "client_credentials")
 flow_node(370, 260, 230, "Cognito", "token + scope write", icon_name="cognito")
@@ -172,8 +178,8 @@ icon("waf", 850, 272, 32)
 flow_node(960, 260, 230, "Lambda API", "contrato, hash e tamanho", icon_name="lambda")
 flow_node(1235, 260, 260, "S3 Bronze /ingestion", "original, VersionId, checksum", icon_name="s3")
 flow_node(1540, 260, 230, "SQS object-events", "buffer e 5 tentativas", icon_name="sqs")
-flow_node(1815, 260, 230, "Lambda Receipt", "hash/tamanho, manifesto, ledger", icon_name="lambda")
-flow_node(2090, 260, 270, "SQS ready", "evento pronto para ETL", icon_name="sqs")
+flow_node(1815, 260, 230, "Lambda Receipt", "hash/tamanho, lote, ledger", icon_name="lambda")
+flow_node(2090, 260, 270, "SQS ready", "lote completo finalizado", icon_name="sqs")
 
 arrow(325, 301, 365, 301, "token")
 arrow(600, 301, 640, 301, "Bearer")
@@ -181,14 +187,14 @@ arrow(915, 301, 955, 301, "invoke")
 arrow(1190, 301, 1230, 301, "URL pré-assinada")
 arrow(1495, 301, 1535, 301, "ObjectCreated")
 arrow(1770, 301, 1810, 301, "batch")
-arrow(2045, 301, 2085, 301, "manifesto")
+arrow(2045, 301, 2085, 301, "finalizar lote")
 
 flow_node(95, 445, 260, "Resposta 4xx", "token, WAF ou contrato API", "#fff2f2", "#d77878")
 flow_node(420, 445, 280, "S3 Quarantine", "metadados, tamanho ou hash inválidos", "#fff2f2", "#d77878", "s3")
 flow_node(765, 445, 280, "DLQ object-events", "Receipt falha após 5 tentativas", "#fff8e8", "#d99a35", "sqs")
 flow_node(1110, 445, 280, "DLQ ready", "Orchestrator falha após 5 tentativas", "#fff8e8", "#d99a35", "sqs")
 flow_node(1455, 445, 280, "CloudWatch alarms", "Errors Lambda e mensagens DLQ", "#fff8e8", "#d99a35", "cloudwatch")
-flow_node(1800, 445, 280, "DynamoDB ledger", "REJECTED / RETRY / ORCHESTRATED", icon_name="dynamodb")
+flow_node(1800, 445, 280, "DynamoDB ledger", "objetos, lotes, execuções", icon_name="dynamodb")
 flow_node(2145, 445, 215, "CloudTrail", "audita Bronze", icon_name="cloudtrail")
 
 # Faixas y=370..430 ficam entre as duas linhas de cartões e evitam cruzamentos.
@@ -201,17 +207,17 @@ route([(1365, 342), (1365, 420), (2250, 420), (2250, 440)], "#177e9d", "5 6")
 route([(905, 527), (905, 555), (1570, 555), (1570, 527)], "#d98d21", "5 6")
 route([(1250, 527), (1250, 575), (1570, 575), (1570, 527)], "#d98d21", "5 6")
 
-flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente ingestion_id", icon_name="lambda")
-flow_node(700, 640, 280, "Step Functions", "retry transitório + Catch", icon_name="step-functions")
+flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente batch_id", icon_name="lambda")
+flow_node(700, 640, 280, "Step Functions", "retry transitório; redrive", icon_name="step-functions")
 flow_node(1065, 640, 250, "Glue Silver", "MERGE por chave", icon_name="glue")
 flow_node(1400, 640, 250, "Glue Gold", "dimensões e fatos", icon_name="glue")
 flow_node(1735, 640, 250, "S3 Gold + Catalog", "snapshots Iceberg", icon_name="s3")
-flow_node(2070, 640, 250, "Athena Consumer", "consulta certificada", icon_name="athena")
+flow_node(2070, 640, 250, "Athena Consumer", "consulta com snapshots fixados", icon_name="athena")
 route([(2225, 342), (2415, 342), (2415, 600), (485, 600), (485, 635)], "#177e9d")
 arrow(615, 681, 695, 681, "StartExecution")
 arrow(980, 681, 1060, 681, "run Silver")
 arrow(1315, 681, 1395, 681, "run Gold")
-arrow(1650, 681, 1730, 681, "commit")
+arrow(1650, 681, 1730, 681, "snapshots")
 arrow(1985, 681, 2065, 681, "consulta")
 flow_node(1000, 755, 320, "Falha Silver", "Gold não inicia; execução FAILED", "#fff2f2", "#d77878", "step-functions")
 flow_node(1380, 755, 320, "Falha Gold", "Silver permanece em snapshot Iceberg", "#fff2f2", "#d77878", "step-functions")

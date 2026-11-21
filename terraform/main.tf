@@ -25,13 +25,15 @@ module "etl" {
   glue_version      = var.glue_version
   number_of_workers = var.number_of_workers
   database          = module.catalog.database
+  operations_table  = aws_dynamodb_table.operations.name
   buckets           = module.storage.buckets
 }
 module "orchestration" {
-  source   = "./modules/orchestration"
-  project  = var.project
-  role_arn = var.lab_role_arn
-  jobs     = module.etl.jobs
+  source        = "./modules/orchestration"
+  project       = var.project
+  role_arn      = var.lab_role_arn
+  jobs          = module.etl.jobs
+  publisher_arn = aws_lambda_function.publisher.arn
 }
 module "query" {
   source  = "./modules/query"
@@ -48,6 +50,8 @@ module "ingestion" {
   results_bucket        = module.storage.buckets["results"]
   quarantine_bucket     = module.storage.buckets["quarantine"]
   state_machine_arn     = module.orchestration.state_machine_arn
+  database              = module.catalog.database
+  operations_table      = aws_dynamodb_table.operations.name
   cognito_domain_prefix = var.cognito_domain_prefix
 }
 module "observability" {

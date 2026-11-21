@@ -11,8 +11,9 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 import boto3
+from lakehouse.contracts import dataset_for_key, validate_manifest
 
 ROOT=Path(__file__).resolve().parent
 TF=ROOT/'terraform'
@@ -39,7 +40,7 @@ if a.action=='cleanup':
 
 o=outputs()
 session=boto3.Session(region_name=o['region'])
-s3=session.client('s3');states=session.client('stepfunctions');athena=session.client('athena')
+s3=session.client('s3');states=session.client('stepfunctions');athena=session.client('athena');ddb=session.client('dynamodb')
 
 
 def upload(stage):
@@ -51,26 +52,40 @@ def upload(stage):
         data=file.read_bytes()
         sha=hashlib.sha256(data).hexdigest()
         put=s3.put_object(Bucket=o['buckets']['bronze'],Key=key,Body=data,Metadata={'sha256':sha})
-        refs.append({'s3_key':key,'sha256':sha,'version_id':put.get('VersionId')})
+        refs.append({'s3_key':key,'dataset_type':dataset_for_key(key),'sha256':sha,'version_id':put.get('VersionId'),'size_bytes':len(data),'source_system':'runner','schema_version':'1','ingestion_id':uuid.uuid4().hex,'status':'RECEIVED'})
+    batch_id=f'batch_{uuid.uuid4().hex}'
+    manifest={'layer':'bronze','batch_id':batch_id,'operation':'initial' if stage=='inicial' else 'incremental','files':refs}
+    validate_manifest(manifest)
     manifest_key=f'manifestos/bronze/{stage}-{uuid.uuid4().hex}.json'
     s3.put_object(Bucket=o['buckets']['results'],Key=manifest_key,
-                  Body=json.dumps({'stage':stage,'files':refs}).encode('utf-8'),ContentType='application/json')
+                  Body=json.dumps(manifest).encode('utf-8'),ContentType='application/json')
     evidence('bronze',{'manifest':manifest_key,'files':refs})
     return manifest_key
 
 
 def start_pipeline(bronze_manifest, expect_failure=False):
     run_id=uuid.uuid4().hex
-    execution=states.start_execution(
+    ddb.put_item(TableName=o['operations_table'], Item={'run_id': {'S': 'LOCK'}, 'owner': {'S': run_id}},
+                 ConditionExpression='attribute_not_exists(run_id)')
+    try:
+        execution=states.start_execution(
         stateMachineArn=o['state_machine_arn'],
         name=f"run-{run_id}",
-        input=json.dumps({'glue_arguments':{'--RUN_ID':run_id,
-                                            '--BRONZE_MANIFEST':bronze_manifest}}))
+        input=json.dumps({'batch_id': json.loads(s3.get_object(Bucket=o['buckets']['results'], Key=bronze_manifest)['Body'].read())['batch_id'], 'run_id':run_id,'attempt_id':1,'start_from':'SILVER','glue_arguments':{'--RUN_ID':run_id,'--BRONZE_MANIFEST':bronze_manifest,'--ATTEMPT_ID':'1'}}))
+    except Exception:
+        ddb.delete_item(TableName=o['operations_table'],Key={'run_id':{'S':'LOCK'}},
+                        ConditionExpression='#owner=:owner', ExpressionAttributeNames={'#owner':'owner'}, ExpressionAttributeValues={':owner':{'S':run_id}})
+        raise
     arn=execution['executionArn']
     for _ in range(240):
         info=states.describe_execution(executionArn=arn)
         state=info['status']
         if state in ('SUCCEEDED','FAILED','TIMED_OUT','ABORTED'):
+            try:
+                ddb.delete_item(TableName=o['operations_table'],Key={'run_id':{'S':'LOCK'}},
+                                ConditionExpression='#owner=:owner', ExpressionAttributeNames={'#owner':'owner'}, ExpressionAttributeValues={':owner':{'S':run_id}})
+            except ddb.exceptions.ConditionalCheckFailedException:
+                pass
             evidence('step-functions',{'execution_arn':arn,'run_id':run_id,
                                        'bronze_manifest':bronze_manifest,'status':state,
                                        'output':info.get('output'),'error':info.get('error'),
@@ -163,23 +178,23 @@ def trace_gold():
     parsed=urlparse(silver_uri)
     assert parsed.scheme=='s3' and parsed.netloc==results_bucket
     silver=json.loads(s3.get_object(Bucket=results_bucket,Key=parsed.path.lstrip('/'))['Body'].read())
-    assert silver['run_id']==gold['run_id']==run_id
+    assert gold['run_id']==run_id and silver['run_id']==gold.get('source_silver_run_id',run_id)
     assert len(gold['iceberg_metadata_locations'])==7
     assert len(silver['iceberg_metadata_locations'])==7
-    glue=session.client('glue')
     for layer,manifest in [('gold',gold),('silver',silver)]:
         for table,location in manifest['iceberg_metadata_locations'].items():
             assert location and location.startswith('s3://'), f'{layer}.{table}: metadata_location ausente'
-            current=glue.get_table(DatabaseName=o['database'],Name=table)['Table']['Parameters']['metadata_location']
-            assert current==location, f'{layer}.{table}: ponteiro Iceberg divergente do catálogo'
-    bronze={obj['key']:obj for obj in silver['bronze_objects']}
+            assert manifest.get('snapshot_ids',{}).get(table), f'{layer}.{table}: snapshot ausente'
+    bronze={(obj['key'],obj['version_id']):obj for obj in silver['bronze_objects']}
     checked=[]
     for uri in sorted(source_uris):
         parsed=urlparse(uri)
         assert parsed.scheme in ('s3','s3a') and parsed.netloc==o['buckets']['bronze'], uri
         key=parsed.path.lstrip('/')
-        assert key in bronze, f'{uri} não consta no manifesto Silver'
-        obj=bronze[key]
+        version=parse_qs(parsed.query).get('versionId',[None])[0]
+        candidates=[obj for (candidate_key,candidate_version),obj in bronze.items() if candidate_key==key and (version is None or candidate_version==version)]
+        assert len(candidates)==1, f'{uri}: versão ambígua ou ausente no manifesto Silver'
+        obj=candidates[0]
         assert obj['version_id'] and obj['sha256'], f'{key}: versão ou hash ausente'
         response=s3.get_object(Bucket=o['buckets']['bronze'],Key=key,VersionId=obj['version_id'])
         actual=hashlib.sha256(response['Body'].read()).hexdigest()
@@ -204,19 +219,15 @@ elif a.action=='verify':verify()
 elif a.action=='trace-gold':trace_gold()
 elif a.action=='snapshots':snapshots()
 elif a.action=='fail-demo':
-    # Arquivo invalido e removido por delete marker ao fim; Bronze conserva a versao auditavel.
+    # O arquivo inválido permanece versionado para auditoria.
     key=f'pagamentos/falha-{uuid.uuid4().hex}.jsonl'
     data=(ROOT/'dados'/'falha_pagamento.jsonl').read_bytes()
     sha=hashlib.sha256(data).hexdigest()
     put=s3.put_object(Bucket=o['buckets']['bronze'],Key=key,Body=data,Metadata={'sha256':sha})
     manifest_key=f'manifestos/bronze/falha-{uuid.uuid4().hex}.json'
     s3.put_object(Bucket=o['buckets']['results'],Key=manifest_key,
-                  Body=json.dumps({'stage':'falha','files':[{'s3_key':key,'sha256':sha,
-                  'version_id':put.get('VersionId')}]}).encode('utf-8'),ContentType='application/json')
-    try:
-        start_pipeline(manifest_key,expect_failure=True)
-    finally:
-        s3.delete_object(Bucket=o['buckets']['bronze'],Key=key)
+                  Body=json.dumps({'layer':'bronze','batch_id':'fail_'+uuid.uuid4().hex,'operation':'incremental','files':[{'s3_key':key,'dataset_type':'pagamentos','sha256':sha,'version_id':put.get('VersionId'),'size_bytes':len(data),'source_system':'runner','schema_version':'1','ingestion_id':uuid.uuid4().hex,'status':'RECEIVED'}]}).encode('utf-8'),ContentType='application/json')
+    start_pipeline(manifest_key,expect_failure=True)
     verify()
 
 elif a.action=='questions':

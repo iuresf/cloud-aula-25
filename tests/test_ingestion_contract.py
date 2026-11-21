@@ -1,7 +1,7 @@
-"""Simula API, eventos S3/SQS e dependências AWS das Lambdas; não chama a conta AWS."""
+"""Contratos e integrações simuladas; nenhum acesso à AWS."""
 import hashlib
-import io
 import importlib.util
+import io
 import json
 import os
 import sys
@@ -9,183 +9,225 @@ import types
 from pathlib import Path
 
 import pytest
-
-
-os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
-os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
-os.environ["BRONZE_BUCKET"] = "bronze-test"
-os.environ["RESULTS_BUCKET"] = "results-test"
-os.environ["QUARANTINE_BUCKET"] = "quarantine-test"
-os.environ["READY_QUEUE_URL"] = "https://sqs.example/ready"
-os.environ["LEDGER_TABLE"] = "ledger-test"
-os.environ["STATE_MACHINE_ARN"] = "arn:aws:states:us-east-1:111111111111:stateMachine:test"
-os.environ["MAX_UPLOAD_BYTES"] = "100"
-sys.modules["boto3"] = types.SimpleNamespace(client=lambda _service: object())
-botocore_exceptions = types.ModuleType("botocore.exceptions")
-
-
-class FakeClientError(Exception):
-    pass
-
-
-botocore_exceptions.ClientError = FakeClientError
-sys.modules["botocore"] = types.ModuleType("botocore")
-sys.modules["botocore.exceptions"] = botocore_exceptions
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location("api_ingestion", ROOT / "terraform/modules/ingestion/lambdas/api_ingestion.py")
-api = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(api)
-spec = importlib.util.spec_from_file_location("receipt", ROOT / "terraform/modules/ingestion/lambdas/receipt.py")
-receipt = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(receipt)
-spec = importlib.util.spec_from_file_location("orchestrator", ROOT / "terraform/modules/ingestion/lambdas/orchestrator.py")
-orchestrator = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(orchestrator)
+sys.path.insert(0, str(ROOT))
+from lakehouse.contracts import validate_manifest
+os.environ.update(AWS_EC2_METADATA_DISABLED="true", AWS_DEFAULT_REGION="us-east-1",
+                  BRONZE_BUCKET="bronze", RESULTS_BUCKET="results", QUARANTINE_BUCKET="quarantine",
+                  BATCH_TABLE="batches", LEDGER_TABLE="ledger", READY_QUEUE_URL="ready",
+                  DATABASE="lab", MAX_UPLOAD_BYTES="1000000", STATE_MACHINE_ARN="arn:aws:states:us-east-1:123:stateMachine:test", OPERATIONS_TABLE="ops")
 
 
-class S3Stub:
-    def generate_presigned_url(self, operation, Params, ExpiresIn):
-        self.operation, self.params, self.expires = operation, Params, ExpiresIn
+class ConditionalError(Exception):
+    response = {"Error": {"Code": "ConditionalCheckFailedException"}}
+
+
+class FakeKey:
+    def __init__(self, name): self.name = name
+    def eq(self, value): return value
+
+
+class Table:
+    def __init__(self): self.items = {}
+    def put_item(self, Item, ConditionExpression=None):
+        key = (Item["batch_id"], Item["record_id"])
+        if ConditionExpression and key in self.items: raise ConditionalError()
+        self.items[key] = Item
+    def get_item(self, Key, **_kwargs):
+        item = self.items.get((Key["batch_id"], Key["record_id"]))
+        return {"Item": item} if item else {}
+    def query(self, KeyConditionExpression, **_kwargs):
+        return {"Items": [item for (batch, _), item in self.items.items() if batch == KeyConditionExpression]}
+    def update_item(self, Key, UpdateExpression, ExpressionAttributeValues, **_kwargs):
+        item = self.items.setdefault((Key["batch_id"], Key["record_id"]), {**Key})
+        if "SET #s=:ready" in UpdateExpression: item.update(status="READY", bronze_manifest=ExpressionAttributeValues[":manifest"])
+        elif "SET #s=:received" in UpdateExpression: item["status"] = "RECEIVED"
+        elif "SET #s=:rejected" in UpdateExpression: item["status"] = "REJECTED"
+        elif "SET #s=:processing" in UpdateExpression: item.update(status="PROCESSING_SILVER", run_id=ExpressionAttributeValues[":run"])
+
+
+class Resource:
+    def __init__(self, table):
+        self.table = table
+        self.meta = types.SimpleNamespace(client=types.SimpleNamespace(exceptions=types.SimpleNamespace(ConditionalCheckFailedException=ConditionalError)))
+    def Table(self, _name): return self.table
+
+
+class S3:
+    def __init__(self): self.objects = {}; self.copies = []; self.presigns = []
+    def generate_presigned_url(self, _operation, Params, **_kwargs):
+        self.presigns.append(Params)
         return "https://example.invalid/upload"
-
-
-def test_api_returns_checksum_and_trace_metadata(monkeypatch):
-    stub = S3Stub()
-    monkeypatch.setattr(api, "s3", stub)
-    digest = hashlib.sha256(b"pedido;P1\n").hexdigest()
-    event = {"body": json.dumps({"file_name": "pedidos.csv", "content_type": "text/csv",
-                                   "source_system": "erp", "schema_version": "1", "size_bytes": 10, "sha256": digest})}
-    result = api.handler(event, None)
-    body = json.loads(result["body"])
-    assert result["statusCode"] == 201
-    assert body["required_headers"]["x-amz-checksum-sha256"]
-    assert stub.params["Metadata"]["sha256"] == digest
-    assert stub.params["Metadata"]["expected-size"] == "10"
-    assert stub.params["Key"].startswith("ingestion/erp/")
-
-
-def test_api_rejects_invalid_hash(monkeypatch):
-    monkeypatch.setattr(api, "s3", S3Stub())
-    result = api.handler({"body": json.dumps({"file_name": "pedidos.csv", "content_type": "text/csv",
-                                                "source_system": "erp", "schema_version": "1", "size_bytes": 10, "sha256": "bad"})}, None)
-    assert result["statusCode"] == 400
-
-
-def test_api_rejects_size_above_limit(monkeypatch):
-    monkeypatch.setattr(api, "s3", S3Stub())
-    digest = hashlib.sha256(b"x").hexdigest()
-    result = api.handler({"body": json.dumps({"file_name": "pedidos.csv", "content_type": "text/csv",
-                                                "source_system": "erp", "schema_version": "1", "size_bytes": 101, "sha256": digest})}, None)
-    assert result["statusCode"] == 400
-    assert json.loads(result["body"])["code"] == "VALIDATION_ERROR"
-
-
-class FailingPresignS3:
-    def generate_presigned_url(self, *_args, **_kwargs):
-        raise RuntimeError("S3 indisponível")
-
-
-def test_api_returns_503_when_presign_dependency_fails(monkeypatch):
-    monkeypatch.setattr(api, "s3", FailingPresignS3())
-    digest = hashlib.sha256(b"x").hexdigest()
-    result = api.handler({"body": json.dumps({"file_name": "pedidos.csv", "content_type": "text/csv",
-                                                "source_system": "erp", "schema_version": "1", "size_bytes": 1, "sha256": digest})}, None)
-    assert result["statusCode"] == 503
-    assert json.loads(result["body"])["code"] == "PRESIGN_UNAVAILABLE"
-
-
-class ReceiptS3:
-    def __init__(self, payload=b"abc", expected_size=None, metadata_override=None):
-        self.payload = payload
-        self.expected_size = expected_size if expected_size is not None else len(payload)
-        self.metadata_override = metadata_override or {}
-        self.copies = []
-
+    def put_object(self, Bucket, Key, Body, **_kwargs): self.objects[(Bucket, Key)] = Body; return {}
     def head_object(self, **_kwargs):
-        metadata = {"ingestion-id": "11111111-1111-1111-1111-111111111111", "sha256": hashlib.sha256(self.payload).hexdigest(),
-                    "source-system": "erp", "schema-version": "1", "expected-size": str(self.expected_size)}
-        metadata.update(self.metadata_override)
-        return {"Metadata": metadata,
-                "ContentLength": len(self.payload), "ContentType": "text/csv"}
-
-    def get_object(self, **_kwargs):
-        return {"Body": io.BytesIO(self.payload)}
-
-    def copy_object(self, **kwargs):
-        self.copies.append(kwargs)
-
-    def put_object(self, **_kwargs):
-        return {}
+        body = b"abc"
+        return {"Metadata": {"ingestion-id": "upload-1", "batch-id": "batch_1", "dataset-type": "pedidos",
+                             "source-system": "erp", "schema-version": "1", "expected-size": "3",
+                             "sha256": hashlib.sha256(body).hexdigest()}, "ContentLength": 3, "ContentType": "text/csv"}
+    def get_object(self, Bucket, Key, **_kwargs): return {"Body": io.BytesIO(self.objects.get((Bucket, Key), b"abc"))}
+    def copy_object(self, **kwargs): self.copies.append(kwargs)
 
 
-class DdbStub:
-    def __init__(self):
-        self.updates = []
+class DDB:
+    def __init__(self): self.rows = {}; self.updates = []; self.lock = None
+    def put_item(self, TableName, Item, **_kwargs):
+        if TableName == "ops":
+            if self.lock: raise ConditionalError()
+            self.lock = Item
+            return
+        key = Item["object_version"]["S"]
+        if key in self.rows: raise ConditionalError()
+        self.rows[key] = Item
+    def update_item(self, **kwargs): self.updates.append(kwargs)
+    def get_item(self, **_kwargs): return {"Item": self.lock} if self.lock else {}
+    def delete_item(self, **_kwargs): self.lock = None
 
-    def update_item(self, **kwargs):
-        self.updates.append(kwargs)
-        return {}
 
-    def put_item(self, **_kwargs):
-        return {}
+class SQS:
+    def __init__(self): self.sent = []
+    def send_message(self, **kwargs): self.sent.append(kwargs)
 
 
-class SqsStub:
-    def __init__(self, fail=False):
-        self.fail, self.messages = fail, []
+class SFN:
+    def __init__(self): self.calls = []
+    def start_execution(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"executionArn": "arn:aws:states:us-east-1:123:execution:test:batch"}
 
-    def send_message(self, **kwargs):
-        if self.fail:
-            raise RuntimeError("SQS indisponível")
-        self.messages.append(kwargs)
-        return {}
+
+s3, table, ledger, sqs, sfn = S3(), Table(), DDB(), SQS(), SFN()
+resource = Resource(table)
+boto = types.ModuleType("boto3")
+boto.client = lambda name: {"s3": s3, "dynamodb": ledger, "sqs": sqs, "stepfunctions": sfn,
+                            "glue": types.SimpleNamespace(get_table=lambda **_kw: {})}[name]
+boto.resource = lambda _name: resource
+sys.modules["boto3"] = boto
+sys.modules["boto3.dynamodb"] = types.ModuleType("boto3.dynamodb")
+conditions = types.ModuleType("boto3.dynamodb.conditions")
+conditions.Key = FakeKey
+sys.modules["boto3.dynamodb.conditions"] = conditions
+botocore = types.ModuleType("botocore")
+errors = types.ModuleType("botocore.exceptions")
+errors.ClientError = ConditionalError
+sys.modules["botocore"] = botocore
+sys.modules["botocore.exceptions"] = errors
+
+
+def load(name):
+    path = ROOT / "terraform/modules/ingestion/lambdas" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+api, receipt, orchestrator = (load(name) for name in ("api_ingestion", "receipt", "orchestrator"))
+
+
+@pytest.fixture(autouse=True)
+def reset():
+    table.items.clear(); ledger.rows.clear(); ledger.updates.clear(); ledger.lock = None; sqs.sent.clear(); sfn.calls.clear(); s3.objects.clear(); s3.copies.clear(); s3.presigns.clear()
+
+
+def upload_payload(dataset="pedidos"):
+    return {"batch_id": "batch_1", "operation": "initial", "dataset_type": dataset,
+            "file_name": f"{dataset}.csv", "sha256": hashlib.sha256(b"abc").hexdigest(),
+            "source_system": "erp", "schema_version": "1", "content_type": "text/csv", "size_bytes": 3}
+
+
+def test_upload_records_pending_session_and_metadata():
+    result = api.handler({"body": json.dumps(upload_payload())}, None)
+    assert result["statusCode"] == 201
+    assert s3.presigns[0]["Metadata"]["dataset-type"] == "pedidos"
+    assert s3.presigns[0]["Key"].startswith("ingestion/pedidos/")
+    assert any(key[1].startswith("UPLOAD#") and value["status"] == "PENDING" for key, value in table.items.items())
+
+
+def test_invalid_sha_rejected():
+    payload = upload_payload(); payload["sha256"] = "wrong"
+    assert api.handler({"body": json.dumps(payload)}, None)["statusCode"] == 400
+
+
+def test_incomplete_batch_does_not_dispatch():
+    table.put_item({"batch_id": "batch_1", "record_id": "META", "operation": "initial", "status": "WAITING_FOR_BATCH"})
+    table.put_item({"batch_id": "batch_1", "record_id": "FILE#1", "dataset_type": "pedidos", "status": "RECEIVED"})
+    result = api.handler({"body": json.dumps({"action": "finalize", "batch_id": "batch_1"})}, None)
+    assert result["statusCode"] == 409 and not sqs.sent
+
+
+def test_complete_batch_finalizes_once_and_sends_ready():
+    table.put_item({"batch_id": "batch_1", "record_id": "META", "operation": "initial", "status": "WAITING_FOR_BATCH"})
+    for name in ("pedidos", "itens", "clientes", "produtos", "pagamentos", "eventos"):
+        table.put_item({"batch_id": "batch_1", "record_id": f"FILE#{name}", "ingestion_id": name,
+                        "dataset_type": name, "source_system": "erp", "schema_version": "1",
+                        "s3_key": f"{name}/file", "version_id": "v1", "sha256": "a"*64,
+                        "size_bytes": 3, "status": "RECEIVED"})
+    result = api.handler({"body": json.dumps({"action": "finalize", "batch_id": "batch_1"})}, None)
+    assert result["statusCode"] == 202 and len(sqs.sent) == 1
+    manifest = json.loads(s3.objects[("results", "manifestos/bronze/batch_1.json")])
+    assert validate_manifest(manifest) == {"pedidos", "itens", "clientes", "produtos", "pagamentos", "eventos"}
 
 
 def receipt_event():
-    s3_event = {"s3": {"bucket": {"name": "bronze-test"}, "object": {"key": "ingestion/erp/pedidos.csv", "versionId": "v1"}}}
-    return {"Records": [{"messageId": "receipt-1", "body": json.dumps({"Records": [s3_event]})}]}
+    return {"Records": [{"messageId": "m1", "body": json.dumps({"Records": [{"s3": {
+        "bucket": {"name": "bronze"}, "object": {"key": "ingestion/pedidos/erp/f.csv", "versionId": "v1"}}}]})}]}
 
 
-@pytest.mark.parametrize(("file_name", "expected_size", "metadata_override", "reason"), [
-    ("metadados_ausentes.csv", None, {"expected-size": None}, "metadados obrigatórios ausentes"),
-    ("tamanho_divergente.csv", 999, {}, "tamanho do objeto divergente"),
-    ("hash_divergente.csv", None, {"sha256": "0" * 64}, "sha256 divergente"),
-])
-def test_receipt_quarantines_permanent_error_files_and_acknowledges_message(
-    monkeypatch, file_name, expected_size, metadata_override, reason
-):
-    payload = (ROOT / "dados" / "erros" / file_name).read_bytes()
-    s3, ddb = ReceiptS3(payload=payload, expected_size=expected_size, metadata_override=metadata_override), DdbStub()
-    monkeypatch.setattr(receipt, "s3", s3)
-    monkeypatch.setattr(receipt, "ddb", ddb)
-    monkeypatch.setattr(receipt, "sqs", SqsStub())
-    result = receipt.handler(receipt_event(), None)
-    assert result == {"batchItemFailures": []}
+def test_receipt_stores_exact_version_and_duplicate_is_idempotent():
+    table.put_item({"batch_id": "batch_1", "record_id": "META", "operation": "initial", "status": "WAITING_FOR_BATCH"})
+    table.put_item({"batch_id": "batch_1", "record_id": "UPLOAD#upload-1", "s3_key": "ingestion/pedidos/erp/f.csv",
+                    "sha256": hashlib.sha256(b"abc").hexdigest(), "status": "PENDING"})
+    assert receipt.handler(receipt_event(), None) == {"batchItemFailures": []}
+    assert table.items[("batch_1", "UPLOAD#upload-1")]["status"] == "RECEIVED"
+    assert table.items[("batch_1", "FILE#bronze/ingestion/pedidos/erp/f.csv/v1")]["version_id"] == "v1"
+    assert receipt.handler(receipt_event(), None) == {"batchItemFailures": []}
+
+
+def test_receipt_rejects_missing_metadata(monkeypatch):
+    original = s3.head_object
+    monkeypatch.setattr(s3, "head_object", lambda **kw: {**original(**kw), "Metadata": {"ingestion-id": "upload-1"}})
+    assert receipt.handler(receipt_event(), None) == {"batchItemFailures": []}
     assert len(s3.copies) == 1
-    assert s3.copies[0]["Metadata"]["reason"].isascii()
-    assert ddb.updates[0]["ExpressionAttributeValues"][":status"]["S"] == "REJECTED"
-    assert ddb.updates[0]["ExpressionAttributeValues"][":reason"]["S"] == reason
+    assert ledger.updates[0]["ExpressionAttributeValues"][":status"]["S"] == "REJECTED"
 
 
-def test_receipt_retries_operational_failure(monkeypatch):
-    monkeypatch.setattr(receipt, "s3", ReceiptS3())
-    monkeypatch.setattr(receipt, "ddb", DdbStub())
-    monkeypatch.setattr(receipt, "sqs", SqsStub(fail=True))
-    assert receipt.handler(receipt_event(), None) == {"batchItemFailures": [{"itemIdentifier": "receipt-1"}]}
+def test_receipt_hash_mismatch_quarantined(monkeypatch):
+    original = s3.head_object
+    monkeypatch.setattr(s3, "head_object", lambda **kw: {**original(**kw), "Metadata": {**original(**kw)["Metadata"], "sha256": "0"*64}})
+    assert receipt.handler(receipt_event(), None) == {"batchItemFailures": []}
+    assert len(s3.copies) == 1
 
 
-class SfnUnavailable:
-    def start_execution(self, **_kwargs):
-        raise RuntimeError("Step Functions indisponível")
+def test_orchestrator_requires_ready_batch():
+    table.put_item({"batch_id": "batch_1", "record_id": "META", "status": "WAITING_FOR_BATCH", "bronze_manifest": "m.json"})
+    event = {"Records": [{"messageId": "m1", "body": json.dumps({"batch_id": "batch_1", "bronze_manifest": "m.json"})}]}
+    assert orchestrator.handler(event, None) == {"batchItemFailures": [{"itemIdentifier": "m1"}]}
+    assert not sfn.calls
 
 
-def test_orchestrator_marks_retry_and_returns_message_to_sqs(monkeypatch):
-    ddb = DdbStub()
-    monkeypatch.setattr(orchestrator, "sfn", SfnUnavailable())
-    monkeypatch.setattr(orchestrator, "ddb", ddb)
-    event = {"Records": [{"messageId": "ready-1", "body": json.dumps({
-        "ingestion_id": "11111111-1111-1111-1111-111111111111", "bronze_manifest": "manifestos/bronze/x.json", "object_version": "bronze-test/key/v1"})}]}
-    assert orchestrator.handler(event, None) == {"batchItemFailures": [{"itemIdentifier": "ready-1"}]}
-    values = ddb.updates[0]["ExpressionAttributeValues"]
-    assert values[":status"]["S"] == "ORCHESTRATION_RETRY"
-    assert "indisponível" in values[":reason"]["S"]
+def test_orchestrator_starts_once_for_duplicate_delivery():
+    table.put_item({"batch_id": "batch_1", "record_id": "META", "status": "READY", "bronze_manifest": "m.json"})
+    event = {"Records": [{"messageId": "m1", "body": json.dumps({"batch_id": "batch_1", "bronze_manifest": "m.json"})}]}
+    assert orchestrator.handler(event, None) == {"batchItemFailures": []}
+    assert orchestrator.handler(event, None) == {"batchItemFailures": []}
+    assert sfn.calls[0]["name"] == sfn.calls[1]["name"]
+
+
+def test_manifest_rejects_missing_initial_source():
+    with pytest.raises(ValueError, match="incompleto"):
+        validate_manifest({"layer": "bronze", "batch_id": "batch_1", "operation": "initial",
+                           "files": [{"s3_key": "pedidos/x.csv", "version_id": "v1", "sha256": "a"*64}]})
+
+
+def test_receipt_retries_transient_s3_failure(monkeypatch):
+    monkeypatch.setattr(s3, "head_object", lambda **_kw: (_ for _ in ()).throw(RuntimeError("S3 temporariamente indisponível")))
+    assert receipt.handler(receipt_event(), None) == {"batchItemFailures": [{"itemIdentifier": "m1"}]}
+    assert not s3.copies
+
+
+def test_orchestrator_retries_start_failure_and_releases_lock(monkeypatch):
+    table.put_item({"batch_id": "batch_1", "record_id": "META", "status": "READY", "bronze_manifest": "m.json"})
+    event = {"Records": [{"messageId": "m1", "body": json.dumps({"batch_id": "batch_1", "bronze_manifest": "m.json"})}]}
+    monkeypatch.setattr(sfn, "start_execution", lambda **_kw: (_ for _ in ()).throw(RuntimeError("Step Functions temporariamente indisponível")))
+    assert orchestrator.handler(event, None) == {"batchItemFailures": [{"itemIdentifier": "m1"}]}
+    assert ledger.lock is None

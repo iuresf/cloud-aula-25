@@ -18,10 +18,23 @@ spark.conf.set("spark.sql.session.timeZone","UTC")
 job=Job(ctx);job.init(args["JOB_NAME"],args)
 db=args["DATABASE"];cat=f"glue_catalog.{db}"
 s3=boto3.client("s3"); glue=boto3.client("glue")
+source_silver_run_id = args["RUN_ID"]
+if "--SOURCE_SILVER_RUN_ID" in sys.argv:
+    source_silver_run_id = sys.argv[sys.argv.index("--SOURCE_SILVER_RUN_ID") + 1]
+silver_key = f"manifestos/silver/{source_silver_run_id}.json"
+silver_manifest = json.loads(s3.get_object(Bucket=args["RESULTS"], Key=silver_key)["Body"].read())
+snapshot_ids = silver_manifest["snapshot_ids"]
+for name in ("pedidos", "itens", "clientes", "produtos", "pagamentos", "eventos"):
+    if not snapshot_ids.get(name):
+        raise ValueError(f"Snapshot Silver ausente: {name}")
+started_at = datetime.now(timezone.utc).isoformat()
+attempt_id = int(sys.argv[sys.argv.index("--ATTEMPT_ID") + 1]) if "--ATTEMPT_ID" in sys.argv else 1
+job_run_id = sys.argv[sys.argv.index("--JOB_RUN_ID") + 1] if "--JOB_RUN_ID" in sys.argv else None
+
 
 
 def read(name):
-    return spark.read.format("iceberg").load(f"{cat}.{name}")
+    return spark.read.format("iceberg").option("snapshot-id", snapshot_ids[name]).load(f"{cat}.{name}")
 
 p=read("pedidos").withColumnRenamed("origem_arquivo", "origem_pedido")
 i=read("itens").withColumnRenamed("origem_arquivo", "origem_item")
@@ -76,6 +89,17 @@ TABLES={
  "fato_sessoes": (sessoes,"sk_sessao","sk_sessao STRING, sk_tempo INT, sk_canal STRING, houve_checkout INT, origem_eventos STRING",None),
 }
 
+# Validação da candidata antes de qualquer commit por tabela.
+for name, (frame, key, _schema, _partition) in TABLES.items():
+    if frame.limit(1).count() == 0:
+        raise ValueError(f"Gold candidata vazia: {name}")
+    if frame.filter(F.col(key).isNull()).limit(1).count():
+        raise ValueError(f"Chave Gold nula: {name}")
+    if frame.groupBy(key).count().filter("count > 1").limit(1).count():
+        raise ValueError(f"Chave Gold duplicada: {name}")
+if fato.filter("receita_liquida < 0 OR valor_bruto < 0").limit(1).count():
+    raise ValueError("Indicadores financeiros negativos")
+
 for name,(df,key,schema,partition) in TABLES.items():
     df=df.withColumn("etl_run_id",F.lit(args["RUN_ID"]))
     schema=f"{schema}, etl_run_id STRING"
@@ -84,16 +108,22 @@ for name,(df,key,schema,partition) in TABLES.items():
     spark.sql(f"CREATE TABLE IF NOT EXISTS {cat}.{name} ({schema}) USING iceberg{partition_sql} "
               f"LOCATION '{location}' TBLPROPERTIES ('format-version'='2')")
     cols=re.findall(r"([a-z_]+)\s+(?:STRING|DATE|TIMESTAMP|INT|DECIMAL\(\d+,\d+\))", schema)
-    df.select(*cols).createOrReplaceTempView(f"incoming_{name}")
-    spark.sql(f"MERGE INTO {cat}.{name} t USING incoming_{name} s ON t.{key}=s.{key} "
-              "WHEN MATCHED THEN UPDATE SET * WHEN NOT MATCHED THEN INSERT *")
+    # Cada tabela é substituída por um snapshot completo da candidata.
+    # O ponteiro publicado só muda depois das sete validações e commits.
+    df.select(*cols).writeTo(f"{cat}.{name}").overwritePartitions()
+
 
 metadados={}
+gold_snapshots={}
 for name in TABLES:
     tb=glue.get_table(DatabaseName=db,Name=name)["Table"]
     metadados[name]=tb.get("Parameters",{}).get("metadata_location")
+    gold_snapshots[name]=str(spark.sql(f"SELECT snapshot_id FROM {cat}.{name}.snapshots ORDER BY committed_at DESC LIMIT 1").first()[0])
+    if spark.read.format("iceberg").option("snapshot-id", gold_snapshots[name]).load(f"{cat}.{name}").limit(1).count() == 0:
+        raise ValueError(f"Snapshot Gold vazio: {name}")
 key=f"manifestos/gold/{args['RUN_ID']}.json"
 s3.put_object(Bucket=args["RESULTS"],Key=key,Body=json.dumps({"layer":"gold","run_id":args["RUN_ID"],"iceberg_metadata_locations":metadados,
- "silver_operational_manifest":f"s3://{args['RESULTS']}/manifestos/silver/{args['RUN_ID']}.json",
+ "silver_operational_manifest":f"s3://{args['RESULTS']}/{silver_key}",
+ "source_silver_run_id":source_silver_run_id,"batch_id":silver_manifest["batch_id"],"snapshot_ids":gold_snapshots,"status":"CANDIDATE","attempt_id":attempt_id,"glue_job_run_id":job_run_id,"started_at":started_at,"finished_at":datetime.now(timezone.utc).isoformat(),
  "atomicity_scope":"per-table","grain":"item_id in fato_itens_venda"},indent=2).encode(),ContentType="application/json")
 job.commit()

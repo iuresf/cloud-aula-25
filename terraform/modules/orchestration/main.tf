@@ -7,13 +7,20 @@ variable "role_arn" {
 variable "jobs" {
   type = map(string)
 }
+variable "publisher_arn" { type = string }
 resource "aws_sfn_state_machine" "etl" {
   name     = "${var.project}-etl"
   role_arn = var.role_arn
   definition = jsonencode({
     Comment = "Silver e Gold: commits Iceberg independentes por tabela"
-    StartAt = "Silver"
+    StartAt = "Route"
+
     States = {
+      Route = {
+        Type    = "Choice"
+        Choices = [{ Variable = "$.start_from", StringEquals = "GOLD", Next = "Gold" }]
+        Default = "Silver"
+      }
       Silver = {
         Type       = "Task"
         Resource   = "arn:aws:states:::glue:startJobRun.sync"
@@ -26,39 +33,27 @@ resource "aws_sfn_state_machine" "etl" {
           BackoffRate     = 2.0
           MaxAttempts     = 3
         }]
-        Catch = [{
-          ErrorEquals = ["States.ALL"]
-          ResultPath  = "$.error"
-          Next        = "FalhaSilver"
-        }]
+
       }
       Gold = {
         Type       = "Task"
         Resource   = "arn:aws:states:::glue:startJobRun.sync"
         Parameters = { JobName = var.jobs["gold"], "Arguments.$" = "$.glue_arguments" }
         ResultPath = "$.gold_result"
-        End        = true
+        Next       = "Publish"
         Retry = [{
           ErrorEquals     = ["Glue.ConcurrentRunsExceededException", "Glue.InternalServiceException", "Glue.OperationTimeoutException", "States.Timeout"]
           IntervalSeconds = 15
           BackoffRate     = 2.0
           MaxAttempts     = 3
         }]
-        Catch = [{
-          ErrorEquals = ["States.ALL"]
-          ResultPath  = "$.error"
-          Next        = "FalhaGold"
-        }]
+
       }
-      FalhaSilver = {
-        Type  = "Fail"
-        Error = "SilverJobFailed"
-        Cause = "O job Silver falhou; Gold nao foi iniciado. Detalhes em $.error e no Glue."
-      }
-      FalhaGold = {
-        Type  = "Fail"
-        Error = "GoldJobFailed"
-        Cause = "O job Gold falhou; o commit Silver anterior permanece rastreavel no Iceberg."
+      Publish = {
+        Type       = "Task"
+        Resource   = "arn:aws:states:::lambda:invoke"
+        Parameters = { FunctionName = var.publisher_arn, "Payload.$" = "$" }
+        End        = true
       }
     }
   })

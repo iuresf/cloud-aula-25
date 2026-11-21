@@ -8,6 +8,8 @@ variable "bronze_bucket" { type = string }
 variable "results_bucket" { type = string }
 variable "quarantine_bucket" { type = string }
 variable "state_machine_arn" { type = string }
+variable "database" { type = string }
+variable "operations_table" { type = string }
 variable "cognito_domain_prefix" { type = string }
 
 locals {
@@ -32,6 +34,22 @@ resource "aws_dynamodb_table" "ingestion" {
   hash_key     = "object_version"
   attribute {
     name = "object_version"
+    type = "S"
+  }
+  point_in_time_recovery { enabled = true }
+}
+
+resource "aws_dynamodb_table" "batches" {
+  name         = "${var.project}-batches"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "batch_id"
+  range_key    = "record_id"
+  attribute {
+    name = "batch_id"
+    type = "S"
+  }
+  attribute {
+    name = "record_id"
     type = "S"
   }
   point_in_time_recovery { enabled = true }
@@ -104,7 +122,7 @@ resource "aws_lambda_function" "api" {
   timeout          = 20
   filename         = data.archive_file.lambda["api"].output_path
   source_code_hash = data.archive_file.lambda["api"].output_base64sha256
-  environment { variables = { BRONZE_BUCKET = var.bronze_bucket, MAX_UPLOAD_BYTES = "104857600" } }
+  environment { variables = { BRONZE_BUCKET = var.bronze_bucket, RESULTS_BUCKET = var.results_bucket, BATCH_TABLE = aws_dynamodb_table.batches.name, READY_QUEUE_URL = aws_sqs_queue.ready.id, DATABASE = var.database, MAX_UPLOAD_BYTES = "104857600" } }
 }
 resource "aws_lambda_function" "receipt" {
   function_name    = "${var.project}-receipt"
@@ -117,7 +135,7 @@ resource "aws_lambda_function" "receipt" {
   environment { variables = {
     BRONZE_BUCKET     = var.bronze_bucket, RESULTS_BUCKET = var.results_bucket,
     QUARANTINE_BUCKET = var.quarantine_bucket, READY_QUEUE_URL = aws_sqs_queue.ready.id,
-    LEDGER_TABLE      = aws_dynamodb_table.ingestion.name
+    LEDGER_TABLE      = aws_dynamodb_table.ingestion.name, BATCH_TABLE = aws_dynamodb_table.batches.name
   } }
 }
 resource "aws_lambda_function" "orchestrator" {
@@ -128,7 +146,7 @@ resource "aws_lambda_function" "orchestrator" {
   timeout          = 20
   filename         = data.archive_file.lambda["orchestrator"].output_path
   source_code_hash = data.archive_file.lambda["orchestrator"].output_base64sha256
-  environment { variables = { STATE_MACHINE_ARN = var.state_machine_arn, LEDGER_TABLE = aws_dynamodb_table.ingestion.name } }
+  environment { variables = { STATE_MACHINE_ARN = var.state_machine_arn, BATCH_TABLE = aws_dynamodb_table.batches.name, OPERATIONS_TABLE = var.operations_table } }
 }
 resource "aws_lambda_event_source_mapping" "receipt" {
   event_source_arn        = aws_sqs_queue.object_events.arn
@@ -271,3 +289,5 @@ output "api_url" { value = "https://${aws_api_gateway_rest_api.ingestion.id}.exe
 output "token_url" { value = "https://${aws_cognito_user_pool_domain.ingestors.domain}.auth.${var.region}.amazoncognito.com/oauth2/token" }
 output "function_names" { value = [aws_lambda_function.api.function_name, aws_lambda_function.receipt.function_name, aws_lambda_function.orchestrator.function_name] }
 output "dlq_names" { value = [aws_sqs_queue.object_dlq.name, aws_sqs_queue.ready_dlq.name] }
+
+output "batch_table" { value = aws_dynamodb_table.batches.name }

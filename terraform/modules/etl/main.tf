@@ -13,6 +13,7 @@ variable "number_of_workers" {
 variable "database" {
   type = string
 }
+variable "operations_table" { type = string }
 variable "buckets" {
   type = map(string)
 }
@@ -56,6 +57,7 @@ resource "aws_glue_job" "job" {
     "--GOLD"                             = var.buckets["gold"]
     "--RESULTS"                          = var.buckets["results"]
     "--DATABASE"                         = var.database
+    "--OPERATIONS_TABLE"                 = var.operations_table
     "--enable-continuous-cloudwatch-log" = "true"
   }
 }
