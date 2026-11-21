@@ -1,0 +1,6 @@
+item_id;pedido_id;produto_id;quantidade;preco_unitario
+I01;P1042;PR01;1;59,90
+I02;P1042;PR02;1;70,00
+I03;P1043;PR03;1;79,00
+I04;P1044;PR01;2;59,90
+I05;P1045;PR03;1;79,00

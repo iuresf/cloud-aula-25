@@ -1,0 +1,4 @@
+{"evento_pagamento_id":"PG001","pedido_id":"P1042","resultado":"aprovado","atualizado_em":"2026-10-20T10:00:00"}
+{"evento_pagamento_id":"PG002","pedido_id":"P1043","resultado":"sem_cobranca","atualizado_em":"2026-10-20T10:01:00"}
+{"evento_pagamento_id":"PG003","pedido_id":"P1044","resultado":"aprovado","atualizado_em":"2026-10-20T10:05:00"}
+{"evento_pagamento_id":"PG004","pedido_id":"P1045","resultado":"pendente","atualizado_em":"2026-10-21T11:00:00"}

@@ -1,0 +1,16 @@
+{
+  "layer": "gold",
+  "run_id": "ca0be85ad53140b1bba73ed3e21ecf1c",
+  "iceberg_metadata_locations": {
+    "dim_tempo": "s3://a25-iceberg-gold-795636653176-us-east-1/dim_tempo/metadata/00002-6f760120-fa5f-493b-9db9-40326f8136e6.metadata.json",
+    "dim_cliente": "s3://a25-iceberg-gold-795636653176-us-east-1/dim_cliente/metadata/00002-7396443f-0339-419b-834f-846bc94183c1.metadata.json",
+    "dim_produto": "s3://a25-iceberg-gold-795636653176-us-east-1/dim_produto/metadata/00002-347dbd80-983f-4c30-9a9a-3bdb4ff3f845.metadata.json",
+    "dim_canal": "s3://a25-iceberg-gold-795636653176-us-east-1/dim_canal/metadata/00002-9a811f38-3c9c-4c35-9033-a16a2325a8a3.metadata.json",
+    "dim_regiao": "s3://a25-iceberg-gold-795636653176-us-east-1/dim_regiao/metadata/00002-c15a349f-4731-4e31-bb1c-5ede8e99b80a.metadata.json",
+    "fato_itens_venda": "s3://a25-iceberg-gold-795636653176-us-east-1/fato_itens_venda/metadata/00002-10f470f1-f5ec-46dc-a21f-0a3c65066ffb.metadata.json",
+    "fato_sessoes": "s3://a25-iceberg-gold-795636653176-us-east-1/fato_sessoes/metadata/00002-cdccdf86-5e92-4ba8-b9ba-381a7bd040d9.metadata.json"
+  },
+  "silver_operational_manifest": "s3://a25-iceberg-results-795636653176-us-east-1/manifestos/silver/ca0be85ad53140b1bba73ed3e21ecf1c.json",
+  "atomicity_scope": "per-table",
+  "grain": "item_id in fato_itens_venda"
+}

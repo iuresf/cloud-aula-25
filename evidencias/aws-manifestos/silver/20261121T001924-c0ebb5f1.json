@@ -1,0 +1,50 @@
+{
+  "layer": "silver",
+  "bronze_objects": [
+    {
+      "key": "clientes/lote_001.csv",
+      "version_id": "vkrd5NTbM6lxhlVZmsiQCSWN6zzHgGiN",
+      "sha256": "ca17d55e209e5a95452db254db6c41be2ada8d7581e9bef7012ee48a88eb506c",
+      "etag": "\"1eb4a3dee435bf09e174b1de7832fb4f\""
+    },
+    {
+      "key": "eventos/lote_001.jsonl",
+      "version_id": "lFLdu3MmWkAaO6gZzP9VTufiFCjoWAwp",
+      "sha256": "1b04f58e474145b79a58477e42ec8094ae7edb0ad9900e6312e2156ebcce512c",
+      "etag": "\"d76e69ed0e698a748a50f1b26352aeb8\""
+    },
+    {
+      "key": "itens/lote_001.csv",
+      "version_id": ".0MSVRKxONdyiEmjzEdjIrpRInTyJxsK",
+      "sha256": "0aaf7a83a8ade66a7b20fa4683b1b1126822bd04884c286e2d25f4c0d8707329",
+      "etag": "\"94e39b354aa0ed066c1c4563619948d5\""
+    },
+    {
+      "key": "pagamentos/lote_001.jsonl",
+      "version_id": "vrXmfU_7qYL_PNiPm8o.PuscWBUtm0xx",
+      "sha256": "8629312e33383fd2ab500deab57cbd54886e140818dbabd4bbaa9fb4fc252a53",
+      "etag": "\"8660330f3bd5dd49e668bda890d50a22\""
+    },
+    {
+      "key": "pedidos/lote_001.csv",
+      "version_id": "nTavoigKtiYkCOAew6x66OqqS_mIeEgh",
+      "sha256": "8d28af95cf40d74547cecfcdb53d090c1e4b8ad463d145853123e6061678c311",
+      "etag": "\"7bf68e198972806a906e5d8fd57fcb88\""
+    },
+    {
+      "key": "produtos/lote_001.csv",
+      "version_id": "zGpswa6EIiTgCgvp5P3IlJ2k8lfYIrG5",
+      "sha256": "1fd1c4c636b73241d23b206cebeb9828d531fff6d28896d4fe89685b0d790688",
+      "etag": "\"0269d09b119b20c4d209f049c8f1a109\""
+    }
+  ],
+  "iceberg_metadata_locations": {
+    "pedidos": "s3://a25-iceberg-silver-795636653176-us-east-1/pedidos/metadata/00001-f9299fc4-dc4b-4f8c-a19b-706b613551d6.metadata.json",
+    "itens": "s3://a25-iceberg-silver-795636653176-us-east-1/itens/metadata/00001-71cb065b-5711-42d2-9655-72acb70e011f.metadata.json",
+    "clientes": "s3://a25-iceberg-silver-795636653176-us-east-1/clientes/metadata/00001-bfa4d450-6b3d-4e8b-b961-4c594288920f.metadata.json",
+    "produtos": "s3://a25-iceberg-silver-795636653176-us-east-1/produtos/metadata/00001-c8e7f359-3720-4fab-a4c7-778524fc520a.metadata.json",
+    "historico_pagamentos": "s3://a25-iceberg-silver-795636653176-us-east-1/historico_pagamentos/metadata/00001-08901d90-2478-4351-b371-4a181eb6b2cd.metadata.json",
+    "pagamentos": "s3://a25-iceberg-silver-795636653176-us-east-1/pagamentos/metadata/00001-e0bb33de-c947-467a-a7d1-a03935f72965.metadata.json",
+    "eventos": "s3://a25-iceberg-silver-795636653176-us-east-1/eventos/metadata/00001-e304099e-6dc8-4557-96b8-e0e97563d332.metadata.json"
+  }
+}

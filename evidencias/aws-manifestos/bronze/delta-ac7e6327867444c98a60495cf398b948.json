@@ -1,0 +1,1 @@
+{"stage": "delta", "files": [{"s3_key": "eventos/lote_002.jsonl", "sha256": "98f3cf78e0e368128f289d16d5ad91b77cce47a679215963ad50ddb04770b006", "version_id": "rFPsw1kD3EXLnWqE8.v3S5eHvtxCxB.s"}, {"s3_key": "pagamentos/lote_002.jsonl", "sha256": "4cd92db956859ff192e3ef697db49fa3bdbacfff87a3dbc77dc943ad30814977", "version_id": "_TcByzX5vM6fLbuHNVnktTQfGL5ejtDR"}]}

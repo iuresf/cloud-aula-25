@@ -1,0 +1,5 @@
+{"evento_id":"E01","sessao":"S01","evento":"view","pedido_id":null,"dia":"2026-10-20","canal_id":"site"}
+{"evento_id":"E02","sessao":"S01","evento":"checkout","pedido_id":"P1042","dia":"2026-10-20","canal_id":"site"}
+{"evento_id":"E03","sessao":"S02","evento":"view","pedido_id":null,"dia":"2026-10-20","canal_id":"site"}
+{"evento_id":"E04","sessao":"S03","evento":"checkout","pedido_id":"P1044","dia":"2026-10-20","canal_id":"app"}
+{"evento_id":"E05","sessao":"S04","evento":"checkout","pedido_id":"P1045","dia":"2026-10-21","canal_id":"app"}

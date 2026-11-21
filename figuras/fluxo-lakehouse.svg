@@ -1,0 +1,544 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2520" height="4860" viewBox="0 0 2520 4860" role="img" aria-labelledby="title desc">
+<title id="title">Inventário completo do Terraform do lakehouse da aula 25</title>
+<desc id="desc">Cada cartão representa um recurso ou uma expansão for_each declarada no Terraform. As setas iniciais mostram o fluxo principal de ingestão e ETL.</desc>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#177e9d" stroke-width="2"/></marker></defs>
+<rect x="0" y="0" width="2520" height="4860" rx="0" fill="#f4f8fc" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="70" y="70" font-size="39" font-weight="750" fill="#243b53">Aula 25 · Inventário completo do Terraform Lakehouse</text>
+<text x="70" y="110" font-size="19" font-weight="400" fill="#557087">Cada cartão mapeia diretamente um recurso declarado; expansões for_each informam todas as instâncias.</text>
+<rect x="70" y="140" width="2380" height="160" rx="18" fill="#e8f1fa" stroke="#c5d7e8" stroke-width="2" stroke-dasharray=""/>
+<text x="95" y="177" font-size="17" font-weight="750" fill="#51708c">FLUXO PRINCIPAL</text>
+<text x="95" y="214" font-size="17" font-weight="600" fill="#243b53">Cognito → API Gateway REST + WAF → Lambda API → S3 Bronze → SQS → Lambda Receipt → SQS → Lambda Orchestrator → Step Functions → Glue Silver → Glue Gold</text>
+<text x="95" y="252" font-size="16" font-weight="400" fill="#557087">Linhas tracejadas indicam recursos opcionais: Lake Formation e o agendador de manutenção quando enable_iceberg_maintenance=true.</text>
+<path d="M190 325 L420 325" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="305.0" y="317.0" font-size="14" font-weight="600" fill="#177e9d">token</text>
+<path d="M470 325 L700 325" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="585.0" y="317.0" font-size="14" font-weight="600" fill="#177e9d">sessão</text>
+<path d="M750 325 L980 325" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="865.0" y="317.0" font-size="14" font-weight="600" fill="#177e9d">upload</text>
+<path d="M1030 325 L1260 325" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="1145.0" y="317.0" font-size="14" font-weight="600" fill="#177e9d">evento</text>
+<path d="M1310 325 L1540 325" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="1425.0" y="317.0" font-size="14" font-weight="600" fill="#177e9d">manifesto</text>
+<path d="M1590 325 L1820 325" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="1705.0" y="317.0" font-size="14" font-weight="600" fill="#177e9d">execução</text>
+<path d="M1870 325 L2100 325" fill="none" stroke="#177e9d" stroke-width="3" marker-end="url(#arrow)"/>
+<text x="1985.0" y="317.0" font-size="14" font-weight="600" fill="#177e9d">jobs</text>
+<text x="125" y="356" font-size="15" font-weight="700" fill="#243b53">Cognito</text>
+<text x="500" y="356" font-size="15" font-weight="700" fill="#243b53">API</text>
+<text x="770" y="356" font-size="15" font-weight="700" fill="#243b53">Bronze</text>
+<text x="1065" y="356" font-size="15" font-weight="700" fill="#243b53">SQS</text>
+<text x="1330" y="356" font-size="15" font-weight="700" fill="#243b53">Receipt</text>
+<text x="1620" y="356" font-size="15" font-weight="700" fill="#243b53">Orchestrator</text>
+<text x="1890" y="356" font-size="15" font-weight="700" fill="#243b53">SFN / Glue</text>
+<text x="70" y="405" font-size="20" font-weight="750" fill="#56718b">ROOT E ARMAZENAMENTO</text>
+<rect x="70" y="431" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="460" font-size="15" font-weight="700" fill="#54708b">Terraform / AWS</text>
+<text x="90" y="488" font-size="21" font-weight="750" fill="#243b53">Identidade da conta</text>
+<rect x="753" y="446" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="466" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="513" font-size="14" font-weight="650" fill="#38546f">data.aws_caller_identity.me</text>
+<text x="90" y="539" font-size="15" font-weight="400" fill="#506983">account_id aplicado aos nomes dos buckets</text>
+<rect x="875" y="431" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="460" font-size="15" font-weight="700" fill="#54708b">Terraform data + S3</text>
+<text x="895" y="488" font-size="21" font-weight="750" fill="#243b53">Bucket Bronze</text>
+<rect x="1558" y="446" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="466" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="513" font-size="14" font-weight="650" fill="#38546f">terraform_data.bucket[bronze]</text>
+<text x="895" y="539" font-size="15" font-weight="400" fill="#506983">buckets.sh create/destroy</text>
+<text x="895" y="560" font-size="15" font-weight="400" fill="#506983">versionamento de objetos</text>
+<rect x="1680" y="431" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="460" font-size="15" font-weight="700" fill="#54708b">Terraform data + S3</text>
+<text x="1700" y="488" font-size="21" font-weight="750" fill="#243b53">Bucket Silver</text>
+<rect x="2363" y="446" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="466" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="513" font-size="14" font-weight="650" fill="#38546f">terraform_data.bucket[silver]</text>
+<text x="1700" y="539" font-size="15" font-weight="400" fill="#506983">warehouse Iceberg Silver</text>
+<text x="1700" y="560" font-size="15" font-weight="400" fill="#506983">buckets.sh create/destroy</text>
+<rect x="70" y="591" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="620" font-size="15" font-weight="700" fill="#54708b">Terraform data + S3</text>
+<text x="90" y="648" font-size="21" font-weight="750" fill="#243b53">Bucket Gold</text>
+<rect x="753" y="606" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="626" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="673" font-size="14" font-weight="650" fill="#38546f">terraform_data.bucket[gold]</text>
+<text x="90" y="699" font-size="15" font-weight="400" fill="#506983">warehouse Iceberg Gold</text>
+<text x="90" y="720" font-size="15" font-weight="400" fill="#506983">buckets.sh create/destroy</text>
+<rect x="875" y="591" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="620" font-size="15" font-weight="700" fill="#54708b">Terraform data + S3</text>
+<text x="895" y="648" font-size="21" font-weight="750" fill="#243b53">Bucket Results</text>
+<rect x="1558" y="606" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="626" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="673" font-size="14" font-weight="650" fill="#38546f">terraform_data.bucket[results]</text>
+<text x="895" y="699" font-size="15" font-weight="400" fill="#506983">scripts, manifestos e resultados Athena</text>
+<rect x="1680" y="591" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="620" font-size="15" font-weight="700" fill="#54708b">Terraform data + S3</text>
+<text x="1700" y="648" font-size="21" font-weight="750" fill="#243b53">Bucket Quarantine</text>
+<rect x="2363" y="606" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="626" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="673" font-size="14" font-weight="650" fill="#38546f">terraform_data.bucket[quarantine]</text>
+<text x="1700" y="699" font-size="15" font-weight="400" fill="#506983">arquivos que violam contrato ou hash</text>
+<rect x="70" y="751" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="780" font-size="15" font-weight="700" fill="#54708b">Terraform data + S3</text>
+<text x="90" y="808" font-size="21" font-weight="750" fill="#243b53">Bucket Audit</text>
+<rect x="753" y="766" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="786" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="833" font-size="14" font-weight="650" fill="#38546f">terraform_data.bucket[audit]</text>
+<text x="90" y="859" font-size="15" font-weight="400" fill="#506983">destino do CloudTrail</text>
+<text x="90" y="880" font-size="15" font-weight="400" fill="#506983">versionamento de objetos</text>
+<rect x="875" y="751" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="780" font-size="15" font-weight="700" fill="#54708b">S3 lifecycle</text>
+<text x="895" y="808" font-size="21" font-weight="750" fill="#243b53">Ciclo Bronze</text>
+<rect x="1558" y="766" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="786" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="833" font-size="14" font-weight="650" fill="#38546f">aws_s3_bucket_lifecycle_configuration.layers[bronze]</text>
+<text x="895" y="859" font-size="15" font-weight="400" fill="#506983">aborta multipart incompleto em 7 dias</text>
+<rect x="1680" y="751" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="780" font-size="15" font-weight="700" fill="#54708b">S3 lifecycle</text>
+<text x="1700" y="808" font-size="21" font-weight="750" fill="#243b53">Ciclo Silver e Gold</text>
+<rect x="2363" y="766" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="786" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="833" font-size="14" font-weight="650" fill="#38546f">aws_s3_bucket_lifecycle_configuration.layers[silver] + [gold]</text>
+<text x="1700" y="859" font-size="15" font-weight="400" fill="#506983">aborta multipart incompleto em 7 dias</text>
+<rect x="70" y="911" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="940" font-size="15" font-weight="700" fill="#54708b">S3 lifecycle</text>
+<text x="90" y="968" font-size="21" font-weight="750" fill="#243b53">Ciclo Results, Quarantine e Audit</text>
+<rect x="753" y="926" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="946" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="993" font-size="14" font-weight="650" fill="#38546f">aws_s3_bucket_lifecycle_configuration.layers[results] + [quarantine] + [audit]</text>
+<text x="90" y="1019" font-size="15" font-weight="400" fill="#506983">aborta multipart incompleto em 7 dias</text>
+<rect x="875" y="911" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="940" font-size="15" font-weight="700" fill="#54708b">AWS Glue Data Catalog</text>
+<text x="895" y="968" font-size="21" font-weight="750" fill="#243b53">Database a25_iceberg</text>
+<rect x="1558" y="926" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="946" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="993" font-size="14" font-weight="650" fill="#38546f">aws_glue_catalog_database.this</text>
+<text x="895" y="1019" font-size="15" font-weight="400" fill="#506983">catálogo de tabelas e schemas Iceberg</text>
+<text x="70" y="1113" font-size="20" font-weight="750" fill="#56718b">ETL, CATÁLOGO E CONSUMO</text>
+<rect x="70" y="1139" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="1168" font-size="15" font-weight="700" fill="#54708b">S3 object</text>
+<text x="90" y="1196" font-size="21" font-weight="750" fill="#243b53">Script Silver</text>
+<rect x="753" y="1154" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="1174" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="1221" font-size="14" font-weight="650" fill="#38546f">aws_s3_object.script[silver]</text>
+<text x="90" y="1247" font-size="15" font-weight="400" fill="#506983">results/jobs/silver.py</text>
+<rect x="875" y="1139" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="1168" font-size="15" font-weight="700" fill="#54708b">S3 object</text>
+<text x="895" y="1196" font-size="21" font-weight="750" fill="#243b53">Script Gold</text>
+<rect x="1558" y="1154" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="1174" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="1221" font-size="14" font-weight="650" fill="#38546f">aws_s3_object.script[gold]</text>
+<text x="895" y="1247" font-size="15" font-weight="400" fill="#506983">results/jobs/gold.py</text>
+<rect x="1680" y="1139" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="1168" font-size="15" font-weight="700" fill="#54708b">AWS Glue</text>
+<text x="1700" y="1196" font-size="21" font-weight="750" fill="#243b53">Job a25-iceberg-silver</text>
+<rect x="2363" y="1154" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="1174" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="1221" font-size="14" font-weight="650" fill="#38546f">aws_glue_job.job[silver]</text>
+<text x="1700" y="1247" font-size="15" font-weight="400" fill="#506983">Glue 4 / Iceberg / 2 workers</text>
+<text x="1700" y="1268" font-size="15" font-weight="400" fill="#506983">MERGE e validação Bronze → Silver</text>
+<rect x="70" y="1299" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="1328" font-size="15" font-weight="700" fill="#54708b">AWS Glue</text>
+<text x="90" y="1356" font-size="21" font-weight="750" fill="#243b53">Job a25-iceberg-gold</text>
+<rect x="753" y="1314" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="1334" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="1381" font-size="14" font-weight="650" fill="#38546f">aws_glue_job.job[gold]</text>
+<text x="90" y="1407" font-size="15" font-weight="400" fill="#506983">dimensões e fatos</text>
+<text x="90" y="1428" font-size="15" font-weight="400" fill="#506983">MERGE Silver → Gold</text>
+<rect x="875" y="1299" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="1328" font-size="15" font-weight="700" fill="#54708b">AWS Step Functions</text>
+<text x="895" y="1356" font-size="21" font-weight="750" fill="#243b53">State machine a25-iceberg-etl</text>
+<rect x="1558" y="1314" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="1334" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="1381" font-size="14" font-weight="650" fill="#38546f">aws_sfn_state_machine.etl</text>
+<text x="895" y="1407" font-size="15" font-weight="400" fill="#506983">integração Glue .sync</text>
+<text x="895" y="1428" font-size="15" font-weight="400" fill="#506983">Silver → Gold</text>
+<rect x="1680" y="1299" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="1328" font-size="15" font-weight="700" fill="#54708b">Amazon Athena</text>
+<text x="1700" y="1356" font-size="21" font-weight="750" fill="#243b53">Workgroup técnico</text>
+<rect x="2363" y="1314" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="1334" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="1381" font-size="14" font-weight="650" fill="#38546f">aws_athena_workgroup.this</text>
+<text x="1700" y="1407" font-size="15" font-weight="400" fill="#506983">engine 3; saída results/athena/</text>
+<rect x="70" y="1459" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="1488" font-size="15" font-weight="700" fill="#54708b">Amazon Athena</text>
+<text x="90" y="1516" font-size="21" font-weight="750" fill="#243b53">Workgroup consumidor</text>
+<rect x="753" y="1474" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="1494" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="1541" font-size="14" font-weight="650" fill="#38546f">aws_athena_workgroup.consumer</text>
+<text x="90" y="1567" font-size="15" font-weight="400" fill="#506983">engine 3; saída results/athena-consumer/</text>
+<rect x="875" y="1459" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="1488" font-size="15" font-weight="700" fill="#54708b">Athena named query</text>
+<text x="895" y="1516" font-size="21" font-weight="750" fill="#243b53">Consulta certificada</text>
+<rect x="1558" y="1474" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="1494" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="1541" font-size="14" font-weight="650" fill="#38546f">aws_athena_named_query.vendas_mensais_v1</text>
+<text x="895" y="1567" font-size="15" font-weight="400" fill="#506983">vendas mensais por região e canal</text>
+<text x="70" y="1661" font-size="20" font-weight="750" fill="#56718b">INGESTÃO: ARQUIVOS, IDENTIDADE, FILAS E LAMBDAS</text>
+<rect x="70" y="1687" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="1716" font-size="15" font-weight="700" fill="#54708b">Archive provider</text>
+<text x="90" y="1744" font-size="21" font-weight="750" fill="#243b53">Pacote Lambda API</text>
+<rect x="753" y="1702" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="1722" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="1769" font-size="14" font-weight="650" fill="#38546f">data.archive_file.lambda[api]</text>
+<text x="90" y="1795" font-size="15" font-weight="400" fill="#506983">zip de lambdas/api_ingestion.py</text>
+<rect x="875" y="1687" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="1716" font-size="15" font-weight="700" fill="#54708b">Archive provider</text>
+<text x="895" y="1744" font-size="21" font-weight="750" fill="#243b53">Pacote Lambda Receipt</text>
+<rect x="1558" y="1702" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="1722" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="1769" font-size="14" font-weight="650" fill="#38546f">data.archive_file.lambda[receipt]</text>
+<text x="895" y="1795" font-size="15" font-weight="400" fill="#506983">zip de lambdas/receipt.py</text>
+<rect x="1680" y="1687" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="1716" font-size="15" font-weight="700" fill="#54708b">Archive provider</text>
+<text x="1700" y="1744" font-size="21" font-weight="750" fill="#243b53">Pacote Lambda Orchestrator</text>
+<rect x="2363" y="1702" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="1722" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="1769" font-size="14" font-weight="650" fill="#38546f">data.archive_file.lambda[orchestrator]</text>
+<text x="1700" y="1795" font-size="15" font-weight="400" fill="#506983">zip de lambdas/orchestrator.py</text>
+<rect x="70" y="1847" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="1876" font-size="15" font-weight="700" fill="#54708b">Amazon DynamoDB</text>
+<text x="90" y="1904" font-size="21" font-weight="750" fill="#243b53">Ledger de ingestão</text>
+<rect x="753" y="1862" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="1882" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="1929" font-size="14" font-weight="650" fill="#38546f">aws_dynamodb_table.ingestion</text>
+<text x="90" y="1955" font-size="15" font-weight="400" fill="#506983">PK object_version; PITR</text>
+<text x="90" y="1976" font-size="15" font-weight="400" fill="#506983">estado RECEIVED / ORCHESTRATED</text>
+<rect x="875" y="1847" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="1876" font-size="15" font-weight="700" fill="#54708b">Amazon Cognito</text>
+<text x="895" y="1904" font-size="21" font-weight="750" fill="#243b53">User pool</text>
+<rect x="1558" y="1862" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="1882" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="1929" font-size="14" font-weight="650" fill="#38546f">aws_cognito_user_pool.ingestors</text>
+<text x="895" y="1955" font-size="15" font-weight="400" fill="#506983">identidade dos produtores</text>
+<rect x="1680" y="1847" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="1876" font-size="15" font-weight="700" fill="#54708b">Amazon Cognito</text>
+<text x="1700" y="1904" font-size="21" font-weight="750" fill="#243b53">Resource server</text>
+<rect x="2363" y="1862" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="1882" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="1929" font-size="14" font-weight="650" fill="#38546f">aws_cognito_resource_server.ingestion</text>
+<text x="1700" y="1955" font-size="15" font-weight="400" fill="#506983">scope ingestion/write</text>
+<rect x="70" y="2007" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="2036" font-size="15" font-weight="700" fill="#54708b">Amazon Cognito</text>
+<text x="90" y="2064" font-size="21" font-weight="750" fill="#243b53">Domínio OAuth2</text>
+<rect x="753" y="2022" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="2042" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="2089" font-size="14" font-weight="650" fill="#38546f">aws_cognito_user_pool_domain.ingestors</text>
+<text x="90" y="2115" font-size="15" font-weight="400" fill="#506983">endpoint client_credentials</text>
+<rect x="875" y="2007" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="2036" font-size="15" font-weight="700" fill="#54708b">Amazon Cognito</text>
+<text x="895" y="2064" font-size="21" font-weight="750" fill="#243b53">Machine client</text>
+<rect x="1558" y="2022" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="2042" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="2089" font-size="14" font-weight="650" fill="#38546f">aws_cognito_user_pool_client.machine</text>
+<text x="895" y="2115" font-size="15" font-weight="400" fill="#506983">segredo e fluxo client_credentials</text>
+<rect x="1680" y="2007" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="2036" font-size="15" font-weight="700" fill="#54708b">Amazon SQS</text>
+<text x="1700" y="2064" font-size="21" font-weight="750" fill="#243b53">Fila object-events</text>
+<rect x="2363" y="2022" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="2042" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="2089" font-size="14" font-weight="650" fill="#38546f">aws_sqs_queue.object_events</text>
+<text x="1700" y="2115" font-size="15" font-weight="400" fill="#506983">eventos S3 Bronze; visibility 180 s</text>
+<rect x="70" y="2167" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="2196" font-size="15" font-weight="700" fill="#54708b">Amazon SQS</text>
+<text x="90" y="2224" font-size="21" font-weight="750" fill="#243b53">DLQ object-events</text>
+<rect x="753" y="2182" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="2202" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="2249" font-size="14" font-weight="650" fill="#38546f">aws_sqs_queue.object_dlq</text>
+<text x="90" y="2275" font-size="15" font-weight="400" fill="#506983">retenção 14 dias; 5 tentativas</text>
+<rect x="875" y="2167" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="2196" font-size="15" font-weight="700" fill="#54708b">Amazon SQS</text>
+<text x="895" y="2224" font-size="21" font-weight="750" fill="#243b53">Fila ready</text>
+<rect x="1558" y="2182" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="2202" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="2249" font-size="14" font-weight="650" fill="#38546f">aws_sqs_queue.ready</text>
+<text x="895" y="2275" font-size="15" font-weight="400" fill="#506983">entrega para orquestração</text>
+<rect x="1680" y="2167" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="2196" font-size="15" font-weight="700" fill="#54708b">Amazon SQS</text>
+<text x="1700" y="2224" font-size="21" font-weight="750" fill="#243b53">DLQ ready</text>
+<rect x="2363" y="2182" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="2202" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="2249" font-size="14" font-weight="650" fill="#38546f">aws_sqs_queue.ready_dlq</text>
+<text x="1700" y="2275" font-size="15" font-weight="400" fill="#506983">retenção 14 dias; 5 tentativas</text>
+<rect x="70" y="2327" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="2356" font-size="15" font-weight="700" fill="#54708b">SQS policy</text>
+<text x="90" y="2384" font-size="21" font-weight="750" fill="#243b53">Política S3 → SQS</text>
+<rect x="753" y="2342" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="2362" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="2409" font-size="14" font-weight="650" fill="#38546f">aws_sqs_queue_policy.object_events</text>
+<text x="90" y="2435" font-size="15" font-weight="400" fill="#506983">permite s3.amazonaws.com SendMessage</text>
+<rect x="875" y="2327" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="2356" font-size="15" font-weight="700" fill="#54708b">AWS Lambda</text>
+<text x="895" y="2384" font-size="21" font-weight="750" fill="#243b53">Lambda API ingestion</text>
+<rect x="1558" y="2342" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="2362" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="2409" font-size="14" font-weight="650" fill="#38546f">aws_lambda_function.api</text>
+<text x="895" y="2435" font-size="15" font-weight="400" fill="#506983">valida contrato e cria URL pré-assinada</text>
+<rect x="1680" y="2327" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="2356" font-size="15" font-weight="700" fill="#54708b">AWS Lambda</text>
+<text x="1700" y="2384" font-size="21" font-weight="750" fill="#243b53">Lambda Receipt</text>
+<rect x="2363" y="2342" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="2362" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="2409" font-size="14" font-weight="650" fill="#38546f">aws_lambda_function.receipt</text>
+<text x="1700" y="2435" font-size="15" font-weight="400" fill="#506983">recalcula SHA-256; manifesto; quarentena</text>
+<rect x="70" y="2487" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="2516" font-size="15" font-weight="700" fill="#54708b">AWS Lambda</text>
+<text x="90" y="2544" font-size="21" font-weight="750" fill="#243b53">Lambda Orchestrator</text>
+<rect x="753" y="2502" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="2522" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="2569" font-size="14" font-weight="650" fill="#38546f">aws_lambda_function.orchestrator</text>
+<text x="90" y="2595" font-size="15" font-weight="400" fill="#506983">inicia Step Functions por ingestion_id</text>
+<rect x="875" y="2487" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="2516" font-size="15" font-weight="700" fill="#54708b">Lambda mapping</text>
+<text x="895" y="2544" font-size="21" font-weight="750" fill="#243b53">SQS object-events → Receipt</text>
+<rect x="1558" y="2502" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="2522" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="2569" font-size="14" font-weight="650" fill="#38546f">aws_lambda_event_source_mapping.receipt</text>
+<text x="895" y="2595" font-size="15" font-weight="400" fill="#506983">batch 10; falhas parciais</text>
+<rect x="1680" y="2487" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="2516" font-size="15" font-weight="700" fill="#54708b">Lambda mapping</text>
+<text x="1700" y="2544" font-size="21" font-weight="750" fill="#243b53">SQS ready → Orchestrator</text>
+<rect x="2363" y="2502" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="2522" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="2569" font-size="14" font-weight="650" fill="#38546f">aws_lambda_event_source_mapping.orchestrator</text>
+<text x="1700" y="2595" font-size="15" font-weight="400" fill="#506983">batch 10; falhas parciais</text>
+<text x="70" y="2689" font-size="20" font-weight="750" fill="#56718b">BORDA DA API E EVENTOS S3</text>
+<rect x="70" y="2715" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="2744" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="90" y="2772" font-size="21" font-weight="750" fill="#243b53">API a25-iceberg-ingestion</text>
+<rect x="753" y="2730" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="2750" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="2797" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_rest_api.ingestion</text>
+<text x="90" y="2823" font-size="15" font-weight="400" fill="#506983">borda pública protegida</text>
+<rect x="875" y="2715" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="2744" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="895" y="2772" font-size="21" font-weight="750" fill="#243b53">Recurso /ingestions</text>
+<rect x="1558" y="2730" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="2750" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="2797" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_resource.ingestions</text>
+<text x="895" y="2823" font-size="15" font-weight="400" fill="#506983">rota de criação de sessão</text>
+<rect x="1680" y="2715" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="2744" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="1700" y="2772" font-size="21" font-weight="750" fill="#243b53">Authorizer Cognito</text>
+<rect x="2363" y="2730" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="2750" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="2797" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_authorizer.cognito</text>
+<text x="1700" y="2823" font-size="15" font-weight="400" fill="#506983">valida access token</text>
+<rect x="70" y="2875" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="2904" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="90" y="2932" font-size="21" font-weight="750" fill="#243b53">Método POST</text>
+<rect x="753" y="2890" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="2910" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="2957" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_method.ingestion</text>
+<text x="90" y="2983" font-size="15" font-weight="400" fill="#506983">scope obrigatório ingestion/write</text>
+<rect x="875" y="2875" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="2904" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="895" y="2932" font-size="21" font-weight="750" fill="#243b53">Integração proxy</text>
+<rect x="1558" y="2890" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="2910" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="2957" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_integration.ingestion</text>
+<text x="895" y="2983" font-size="15" font-weight="400" fill="#506983">POST → Lambda API</text>
+<rect x="1680" y="2875" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="2904" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="1700" y="2932" font-size="21" font-weight="750" fill="#243b53">Deployment</text>
+<rect x="2363" y="2890" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="2910" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="2957" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_deployment.ingestion</text>
+<text x="1700" y="2983" font-size="15" font-weight="400" fill="#506983">redeploy por hash da rota</text>
+<rect x="70" y="3035" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="3064" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="90" y="3092" font-size="21" font-weight="750" fill="#243b53">Stage v1</text>
+<rect x="753" y="3050" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="3070" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="3117" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_stage.ingestion</text>
+<text x="90" y="3143" font-size="15" font-weight="400" fill="#506983">X-Ray habilitado</text>
+<rect x="875" y="3035" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="3064" font-size="15" font-weight="700" fill="#54708b">API Gateway REST</text>
+<text x="895" y="3092" font-size="21" font-weight="750" fill="#243b53">Throttling POST</text>
+<rect x="1558" y="3050" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="3070" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="3117" font-size="14" font-weight="650" fill="#38546f">aws_api_gateway_method_settings.ingestion</text>
+<text x="895" y="3143" font-size="15" font-weight="400" fill="#506983">25 req/s; burst 50; métricas</text>
+<rect x="1680" y="3035" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="3064" font-size="15" font-weight="700" fill="#54708b">AWS WAFv2</text>
+<text x="1700" y="3092" font-size="21" font-weight="750" fill="#243b53">Web ACL</text>
+<rect x="2363" y="3050" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="3070" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="3117" font-size="14" font-weight="650" fill="#38546f">aws_wafv2_web_acl.ingestion</text>
+<text x="1700" y="3143" font-size="15" font-weight="400" fill="#506983">rate limit por IP</text>
+<text x="1700" y="3164" font-size="15" font-weight="400" fill="#506983">AWSManagedRulesCommonRuleSet</text>
+<rect x="70" y="3195" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="3224" font-size="15" font-weight="700" fill="#54708b">WAF association</text>
+<text x="90" y="3252" font-size="21" font-weight="750" fill="#243b53">WAF → stage v1</text>
+<rect x="753" y="3210" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="3230" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="3277" font-size="14" font-weight="650" fill="#38546f">aws_wafv2_web_acl_association.ingestion</text>
+<text x="90" y="3303" font-size="15" font-weight="400" fill="#506983">associação ao API Gateway REST</text>
+<rect x="875" y="3195" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="3224" font-size="15" font-weight="700" fill="#54708b">Lambda permission</text>
+<text x="895" y="3252" font-size="21" font-weight="750" fill="#243b53">Permissão API Gateway</text>
+<rect x="1558" y="3210" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="3230" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="3277" font-size="14" font-weight="650" fill="#38546f">aws_lambda_permission.api_gateway</text>
+<text x="895" y="3303" font-size="15" font-weight="400" fill="#506983">API Gateway invoca Lambda API</text>
+<rect x="1680" y="3195" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="3224" font-size="15" font-weight="700" fill="#54708b">S3 notification</text>
+<text x="1700" y="3252" font-size="21" font-weight="750" fill="#243b53">Evento Bronze</text>
+<rect x="2363" y="3210" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="3230" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="3277" font-size="14" font-weight="650" fill="#38546f">aws_s3_bucket_notification.bronze</text>
+<text x="1700" y="3303" font-size="15" font-weight="400" fill="#506983">prefixo ingestion/ → SQS object-events</text>
+<text x="70" y="3397" font-size="20" font-weight="750" fill="#56718b">OBSERVABILIDADE, AUDITORIA E MANUTENÇÃO</text>
+<rect x="70" y="3423" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="3452" font-size="15" font-weight="700" fill="#54708b">CloudWatch Logs</text>
+<text x="90" y="3480" font-size="21" font-weight="750" fill="#243b53">Log group API</text>
+<rect x="753" y="3438" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="3458" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="3505" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_log_group.ingestion[api]</text>
+<text x="90" y="3531" font-size="15" font-weight="400" fill="#506983">/aws/lambda/a25-iceberg-api-ingestion</text>
+<text x="90" y="3552" font-size="15" font-weight="400" fill="#506983">retenção 30 dias</text>
+<rect x="875" y="3423" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="3452" font-size="15" font-weight="700" fill="#54708b">CloudWatch Logs</text>
+<text x="895" y="3480" font-size="21" font-weight="750" fill="#243b53">Log group Receipt</text>
+<rect x="1558" y="3438" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="3458" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="3505" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_log_group.ingestion[receipt]</text>
+<text x="895" y="3531" font-size="15" font-weight="400" fill="#506983">/aws/lambda/a25-iceberg-receipt</text>
+<text x="895" y="3552" font-size="15" font-weight="400" fill="#506983">retenção 30 dias</text>
+<rect x="1680" y="3423" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="3452" font-size="15" font-weight="700" fill="#54708b">CloudWatch Logs</text>
+<text x="1700" y="3480" font-size="21" font-weight="750" fill="#243b53">Log group Orchestrator</text>
+<rect x="2363" y="3438" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="3458" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="3505" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_log_group.ingestion[orchestrator]</text>
+<text x="1700" y="3531" font-size="15" font-weight="400" fill="#506983">/aws/lambda/a25-iceberg-orchestrator</text>
+<text x="1700" y="3552" font-size="15" font-weight="400" fill="#506983">retenção 30 dias</text>
+<rect x="70" y="3583" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="3612" font-size="15" font-weight="700" fill="#54708b">CloudWatch Alarm</text>
+<text x="90" y="3640" font-size="21" font-weight="750" fill="#243b53">Alarme object-events DLQ</text>
+<rect x="753" y="3598" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="3618" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="3665" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_metric_alarm.dlq_messages[object_dlq]</text>
+<text x="90" y="3691" font-size="15" font-weight="400" fill="#506983">ApproximateNumberOfMessagesVisible &gt; 0</text>
+<rect x="875" y="3583" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="3612" font-size="15" font-weight="700" fill="#54708b">CloudWatch Alarm</text>
+<text x="895" y="3640" font-size="21" font-weight="750" fill="#243b53">Alarme ready DLQ</text>
+<rect x="1558" y="3598" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="3618" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="3665" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_metric_alarm.dlq_messages[ready_dlq]</text>
+<text x="895" y="3691" font-size="15" font-weight="400" fill="#506983">ApproximateNumberOfMessagesVisible &gt; 0</text>
+<rect x="1680" y="3583" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="3612" font-size="15" font-weight="700" fill="#54708b">CloudWatch Alarm</text>
+<text x="1700" y="3640" font-size="21" font-weight="750" fill="#243b53">Alarmes Lambda Errors</text>
+<rect x="2363" y="3598" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="3618" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="3665" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_metric_alarm.lambda_errors[api] + [receipt] + [orchestrator]</text>
+<text x="1700" y="3691" font-size="15" font-weight="400" fill="#506983">um alarme por Lambda; Errors &gt; 0</text>
+<rect x="70" y="3743" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="3772" font-size="15" font-weight="700" fill="#54708b">CloudWatch</text>
+<text x="90" y="3800" font-size="21" font-weight="750" fill="#243b53">Dashboard lakehouse</text>
+<rect x="753" y="3758" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="3778" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="3825" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_dashboard.lakehouse</text>
+<text x="90" y="3851" font-size="15" font-weight="400" fill="#506983">métricas de erro das 3 Lambdas</text>
+<rect x="875" y="3743" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="3772" font-size="15" font-weight="700" fill="#54708b">S3 bucket policy</text>
+<text x="895" y="3800" font-size="21" font-weight="750" fill="#243b53">Política do Audit</text>
+<rect x="1558" y="3758" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="3778" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="3825" font-size="14" font-weight="650" fill="#38546f">aws_s3_bucket_policy.audit</text>
+<text x="895" y="3851" font-size="15" font-weight="400" fill="#506983">CloudTrail GetBucketAcl / PutObject</text>
+<rect x="1680" y="3743" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="3772" font-size="15" font-weight="700" fill="#54708b">AWS CloudTrail</text>
+<text x="1700" y="3800" font-size="21" font-weight="750" fill="#243b53">Trilha a25-iceberg-audit</text>
+<rect x="2363" y="3758" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="3778" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="3825" font-size="14" font-weight="650" fill="#38546f">aws_cloudtrail.lakehouse</text>
+<text x="1700" y="3851" font-size="15" font-weight="400" fill="#506983">eventos gerenciais + objetos Bronze</text>
+<text x="1700" y="3872" font-size="15" font-weight="400" fill="#506983">validação de arquivos de log</text>
+<rect x="70" y="3903" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="90" y="3932" font-size="15" font-weight="700" fill="#54708b">S3 object</text>
+<text x="90" y="3960" font-size="21" font-weight="750" fill="#243b53">Script de manutenção</text>
+<rect x="753" y="3918" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="3938" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="90" y="3985" font-size="14" font-weight="650" fill="#38546f">aws_s3_object.script</text>
+<text x="90" y="4011" font-size="15" font-weight="400" fill="#506983">results/jobs/maintenance.py</text>
+<rect x="875" y="3903" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="895" y="3932" font-size="15" font-weight="700" fill="#54708b">AWS Glue</text>
+<text x="895" y="3960" font-size="21" font-weight="750" fill="#243b53">Job manutenção Iceberg</text>
+<rect x="1558" y="3918" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="3938" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="895" y="3985" font-size="14" font-weight="650" fill="#38546f">aws_glue_job.iceberg</text>
+<text x="895" y="4011" font-size="15" font-weight="400" fill="#506983">compacta; expira snapshots; remove órfãos</text>
+<rect x="1680" y="3903" width="760" height="138" rx="16" fill="#fff" stroke="#9fb7ce" stroke-width="2" stroke-dasharray=""/>
+<text x="1700" y="3932" font-size="15" font-weight="700" fill="#54708b">Amazon EventBridge</text>
+<text x="1700" y="3960" font-size="21" font-weight="750" fill="#243b53">Regra semanal</text>
+<rect x="2363" y="3918" width="56" height="27" rx="14" fill="#daf2e4" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="3938" font-size="13" font-weight="750" fill="#245947">TF</text>
+<text x="1700" y="3985" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_event_rule.weekly</text>
+<text x="1700" y="4011" font-size="15" font-weight="400" fill="#506983">cron domingo 04:00 UTC; inicialmente DISABLED</text>
+<rect x="70" y="4063" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="90" y="4092" font-size="15" font-weight="700" fill="#54708b">IAM</text>
+<text x="90" y="4120" font-size="21" font-weight="750" fill="#243b53">Role EventBridge</text>
+<rect x="753" y="4078" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="4098" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="90" y="4145" font-size="14" font-weight="650" fill="#38546f">aws_iam_role.scheduler</text>
+<text x="90" y="4171" font-size="15" font-weight="400" fill="#506983">criada somente se maintenance enabled</text>
+<rect x="875" y="4063" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="895" y="4092" font-size="15" font-weight="700" fill="#54708b">IAM</text>
+<text x="895" y="4120" font-size="21" font-weight="750" fill="#243b53">Política do agendador</text>
+<rect x="1558" y="4078" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="4098" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="895" y="4145" font-size="14" font-weight="650" fill="#38546f">aws_iam_role_policy.scheduler</text>
+<text x="895" y="4171" font-size="15" font-weight="400" fill="#506983">glue:StartJobRun; condicional</text>
+<rect x="1680" y="4063" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="1700" y="4092" font-size="15" font-weight="700" fill="#54708b">EventBridge target</text>
+<text x="1700" y="4120" font-size="21" font-weight="750" fill="#243b53">Alvo Glue manutenção</text>
+<rect x="2363" y="4078" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="4098" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="1700" y="4145" font-size="14" font-weight="650" fill="#38546f">aws_cloudwatch_event_target.weekly</text>
+<text x="1700" y="4171" font-size="15" font-weight="400" fill="#506983">usa role scheduler; condicional</text>
+<text x="70" y="4265" font-size="20" font-weight="750" fill="#56718b">GOVERNANÇA LAKE FORMATION — MÓDULO OPCIONAL</text>
+<rect x="70" y="4291" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="90" y="4320" font-size="15" font-weight="700" fill="#54708b">Lake Formation</text>
+<text x="90" y="4348" font-size="21" font-weight="750" fill="#243b53">Location Silver</text>
+<rect x="753" y="4306" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="4326" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="90" y="4373" font-size="14" font-weight="650" fill="#38546f">aws_lakeformation_resource.layer[silver]</text>
+<text x="90" y="4399" font-size="15" font-weight="400" fill="#506983">S3 Silver registrado no Lake Formation</text>
+<rect x="875" y="4291" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="895" y="4320" font-size="15" font-weight="700" fill="#54708b">Lake Formation</text>
+<text x="895" y="4348" font-size="21" font-weight="750" fill="#243b53">Location Gold</text>
+<rect x="1558" y="4306" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="4326" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="895" y="4373" font-size="14" font-weight="650" fill="#38546f">aws_lakeformation_resource.layer[gold]</text>
+<text x="895" y="4399" font-size="15" font-weight="400" fill="#506983">S3 Gold registrado no Lake Formation</text>
+<rect x="1680" y="4291" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="1700" y="4320" font-size="15" font-weight="700" fill="#54708b">Lake Formation</text>
+<text x="1700" y="4348" font-size="21" font-weight="750" fill="#243b53">Permissão de database</text>
+<rect x="2363" y="4306" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="4326" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="1700" y="4373" font-size="14" font-weight="650" fill="#38546f">aws_lakeformation_permissions.database</text>
+<text x="1700" y="4399" font-size="15" font-weight="400" fill="#506983">ALL para a role configurada</text>
+<rect x="70" y="4451" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="90" y="4480" font-size="15" font-weight="700" fill="#54708b">Lake Formation</text>
+<text x="90" y="4508" font-size="21" font-weight="750" fill="#243b53">Permissão de tabelas</text>
+<rect x="753" y="4466" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="767" y="4486" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="90" y="4533" font-size="14" font-weight="650" fill="#38546f">aws_lakeformation_permissions.table</text>
+<text x="90" y="4559" font-size="15" font-weight="400" fill="#506983">ALL no wildcard de tabelas</text>
+<rect x="875" y="4451" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="895" y="4480" font-size="15" font-weight="700" fill="#54708b">Lake Formation LF-Tag</text>
+<text x="895" y="4508" font-size="21" font-weight="750" fill="#243b53">Tag classification</text>
+<rect x="1558" y="4466" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="1572" y="4486" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="895" y="4533" font-size="14" font-weight="650" fill="#38546f">aws_lakeformation_lf_tag.classification</text>
+<text x="895" y="4559" font-size="15" font-weight="400" fill="#506983">valores internal, restricted</text>
+<rect x="1680" y="4451" width="760" height="138" rx="16" fill="#f5f2fb" stroke="#b7afcf" stroke-width="2" stroke-dasharray="7 5"/>
+<text x="1700" y="4480" font-size="15" font-weight="700" fill="#54708b">Lake Formation LF-Tag</text>
+<text x="1700" y="4508" font-size="21" font-weight="750" fill="#243b53">Tag domain</text>
+<rect x="2363" y="4466" width="56" height="27" rx="14" fill="#eeeaf7" stroke="none" stroke-width="2" stroke-dasharray=""/>
+<text x="2377" y="4486" font-size="13" font-weight="750" fill="#675a83">OPT</text>
+<text x="1700" y="4533" font-size="14" font-weight="650" fill="#38546f">aws_lakeformation_lf_tag.domain</text>
+<text x="1700" y="4559" font-size="15" font-weight="400" fill="#506983">valor commerce</text>
+<rect x="70" y="4755" width="2380" height="65" rx="16" fill="#fff" stroke="#cbd8e6" stroke-width="2" stroke-dasharray=""/>
+<text x="95" y="4784" font-size="16" font-weight="500" fill="#4d667e">TF = recurso criado em apply; OPT = count/condicional. Dados locais, variáveis e outputs não criam recursos AWS e não aparecem como cartões.</text>
+</svg>

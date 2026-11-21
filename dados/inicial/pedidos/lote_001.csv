@@ -1,0 +1,6 @@
+pedido_id;data_pedido;cliente_id;canal_id;status
+P1042;2026-10-20;C01;site;pago
+P1043;2026-10-20;C02;site;cancelado
+P1044;2026-10-20;C03;app;pago
+P1045;2026-10-21;C01;app;pago
+P1042;2026-10-20;C01;site;pago

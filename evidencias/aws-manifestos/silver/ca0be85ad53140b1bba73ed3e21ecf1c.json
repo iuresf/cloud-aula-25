@@ -1,0 +1,63 @@
+{
+  "layer": "silver",
+  "run_id": "ca0be85ad53140b1bba73ed3e21ecf1c",
+  "bronze_objects": [
+    {
+      "key": "clientes/lote_001.csv",
+      "version_id": "vkrd5NTbM6lxhlVZmsiQCSWN6zzHgGiN",
+      "sha256": "ca17d55e209e5a95452db254db6c41be2ada8d7581e9bef7012ee48a88eb506c",
+      "etag": "\"1eb4a3dee435bf09e174b1de7832fb4f\""
+    },
+    {
+      "key": "eventos/lote_001.jsonl",
+      "version_id": "lFLdu3MmWkAaO6gZzP9VTufiFCjoWAwp",
+      "sha256": "1b04f58e474145b79a58477e42ec8094ae7edb0ad9900e6312e2156ebcce512c",
+      "etag": "\"d76e69ed0e698a748a50f1b26352aeb8\""
+    },
+    {
+      "key": "eventos/lote_002.jsonl",
+      "version_id": "OOp187ttkhX9uex2omcwSMo_aYrPoh8H",
+      "sha256": "98f3cf78e0e368128f289d16d5ad91b77cce47a679215963ad50ddb04770b006",
+      "etag": "\"dfae8d3b842fd1b101bb3510a8cb74c3\""
+    },
+    {
+      "key": "itens/lote_001.csv",
+      "version_id": ".0MSVRKxONdyiEmjzEdjIrpRInTyJxsK",
+      "sha256": "0aaf7a83a8ade66a7b20fa4683b1b1126822bd04884c286e2d25f4c0d8707329",
+      "etag": "\"94e39b354aa0ed066c1c4563619948d5\""
+    },
+    {
+      "key": "pagamentos/lote_001.jsonl",
+      "version_id": "vrXmfU_7qYL_PNiPm8o.PuscWBUtm0xx",
+      "sha256": "8629312e33383fd2ab500deab57cbd54886e140818dbabd4bbaa9fb4fc252a53",
+      "etag": "\"8660330f3bd5dd49e668bda890d50a22\""
+    },
+    {
+      "key": "pagamentos/lote_002.jsonl",
+      "version_id": "Roj0xEf0ViFoLNnUp2Pw4k82T7p7iHPr",
+      "sha256": "4cd92db956859ff192e3ef697db49fa3bdbacfff87a3dbc77dc943ad30814977",
+      "etag": "\"b0148928cc0c9048f8b63233e3d36b04\""
+    },
+    {
+      "key": "pedidos/lote_001.csv",
+      "version_id": "nTavoigKtiYkCOAew6x66OqqS_mIeEgh",
+      "sha256": "8d28af95cf40d74547cecfcdb53d090c1e4b8ad463d145853123e6061678c311",
+      "etag": "\"7bf68e198972806a906e5d8fd57fcb88\""
+    },
+    {
+      "key": "produtos/lote_001.csv",
+      "version_id": "zGpswa6EIiTgCgvp5P3IlJ2k8lfYIrG5",
+      "sha256": "1fd1c4c636b73241d23b206cebeb9828d531fff6d28896d4fe89685b0d790688",
+      "etag": "\"0269d09b119b20c4d209f049c8f1a109\""
+    }
+  ],
+  "iceberg_metadata_locations": {
+    "pedidos": "s3://a25-iceberg-silver-795636653176-us-east-1/pedidos/metadata/00002-846fe11b-ca0e-4e5b-a269-71c35b2e7983.metadata.json",
+    "itens": "s3://a25-iceberg-silver-795636653176-us-east-1/itens/metadata/00002-fa0a423f-8cfc-4d90-94fc-142fd958a2c7.metadata.json",
+    "clientes": "s3://a25-iceberg-silver-795636653176-us-east-1/clientes/metadata/00002-7ae48bba-2df9-42ac-adfe-0e67869fa2ac.metadata.json",
+    "produtos": "s3://a25-iceberg-silver-795636653176-us-east-1/produtos/metadata/00002-64c6ca44-af5b-402c-9fec-3bf5b5a26dbe.metadata.json",
+    "historico_pagamentos": "s3://a25-iceberg-silver-795636653176-us-east-1/historico_pagamentos/metadata/00002-e789b2f1-6ce8-4ce0-826b-6e5fcd334ca1.metadata.json",
+    "pagamentos": "s3://a25-iceberg-silver-795636653176-us-east-1/pagamentos/metadata/00002-3585c088-5aab-4473-8433-0c002460f1e2.metadata.json",
+    "eventos": "s3://a25-iceberg-silver-795636653176-us-east-1/eventos/metadata/00002-560ee821-d891-4f21-ae95-4bf353d2b8aa.metadata.json"
+  }
+}

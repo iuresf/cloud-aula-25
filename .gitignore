@@ -1,0 +1,25 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Terraform: mantenha o lock de providers, nunca estado, planos ou variáveis locais.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!terraform/terraform.tfvars.example
+.terraform.tfstate.lock.info
+
+# Artefatos gerados durante o empacotamento das Lambdas.
+terraform/modules/ingestion/.build/
+
+# Saídas transitórias de testes na AWS; a síntese é documentada em RESULTADOS_AWS.md.
+evidencias/*.json
+!evidencias/.gitkeep
+
+# Ambiente e arquivos locais.
+.env
+.DS_Store

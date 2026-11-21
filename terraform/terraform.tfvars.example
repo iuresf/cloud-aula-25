@@ -1,0 +1,10 @@
+region = "us-east-1"
+project = "a25-iceberg"
+lab_role_arn = "arn:aws:iam::123456789012:role/LabRole"
+# Em produção, use uma role Lambda com S3/SQS/DynamoDB/StepFunctions mínimos.
+# ingestion_role_arn = "arn:aws:iam::123456789012:role/LakehouseIngestionLambdaRole"
+enable_lake_formation = false
+# O valor deve ser único na região para o domínio Cognito.
+cognito_domain_prefix = "a25-lakehouse-ingestion-123456789012"
+# A regra EventBridge de manutenção Iceberg começa desligada.
+enable_iceberg_maintenance = false
