@@ -18,6 +18,72 @@ module "catalog" {
   source   = "./modules/catalog"
   database = local.database
 }
+resource "aws_glue_catalog_table" "silver_quality_anomalies" {
+  name          = "qualidade_silver_anomalias"
+  database_name = module.catalog.database
+  table_type    = "EXTERNAL_TABLE"
+  parameters    = { classification = "parquet", EXTERNAL = "TRUE" }
+  storage_descriptor {
+    location      = "s3://${module.storage.buckets["results"]}/qualidade/silver/anomalias/"
+    input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
+    output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
+    ser_de_info {
+      serialization_library = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
+    }
+    columns {
+      name = "run_id"
+      type = "string"
+    }
+    columns {
+      name = "attempt_id"
+      type = "int"
+    }
+    columns {
+      name = "dataset_type"
+      type = "string"
+    }
+    columns {
+      name = "category"
+      type = "string"
+    }
+    columns {
+      name = "business_key"
+      type = "string"
+    }
+    columns {
+      name = "occurrence_id"
+      type = "string"
+    }
+    columns {
+      name = "kept_occurrence_id"
+      type = "string"
+    }
+    columns {
+      name = "origin_uri"
+      type = "string"
+    }
+    columns {
+      name = "source_position"
+      type = "bigint"
+    }
+    columns {
+      name = "record_hash"
+      type = "string"
+    }
+    columns {
+      name = "values_json"
+      type = "string"
+    }
+    columns {
+      name = "detail"
+      type = "string"
+    }
+    columns {
+      name = "detected_at"
+      type = "string"
+    }
+  }
+}
 module "etl" {
   source            = "./modules/etl"
   project           = var.project

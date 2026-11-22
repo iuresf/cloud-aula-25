@@ -14,10 +14,10 @@ os.environ.update(RESULTS_BUCKET="results", DATABASE="lab", OPERATIONS_TABLE="op
 
 
 class S3:
-    def __init__(self): self.gold = {}; self.silver = {}
+    def __init__(self): self.gold = {}; self.silver = {}; self.report = {}
     def get_object(self, Bucket, Key):
         assert Bucket == "results"
-        data = self.gold if Key.startswith("manifestos/gold/") else self.silver
+        data = self.gold if Key.startswith("manifestos/gold/") else self.report if Key.startswith("qualidade/") else self.silver
         return {"Body": io.BytesIO(json.dumps(data).encode())}
 
 
@@ -53,9 +53,14 @@ def setup():
     s3.gold = {"status": "CANDIDATE", "run_id": "new", "batch_id": "batch_1", "source_silver_run_id": "original",
                "silver_operational_manifest": "s3://results/manifestos/silver/original.json",
                "snapshot_ids": {name: str(i) for i, name in enumerate(publisher.GOLD, 1)},
-               "iceberg_metadata_locations": {name: f"s3://gold/{name}/metadata.json" for name in publisher.GOLD}}
+               "iceberg_metadata_locations": {name: f"s3://gold/{name}/metadata.json" for name in publisher.GOLD},
+               "attempt_id": 1, "reconciliation_schema_version": "1", "reconciliation_status": "PASS",
+               "reconciliation_uri": "s3://results/qualidade/gold/run_id=new/attempt_id=1/reconciliacao.json"}
     s3.silver = {"run_id": "original", "status": "SUCCEEDED",
                  "snapshot_ids": {name: str(i) for i, name in enumerate(publisher.SILVER, 1)}}
+    s3.report = {"run_id": "new", "attempt_id": 1, "source_silver_run_id": "original",
+                 "silver_snapshot_ids": s3.silver["snapshot_ids"], "gold_snapshot_ids": s3.gold["snapshot_ids"],
+                 "status": "PASS", "checks": [{"id": "FACT_NET_REVENUE", "status": "PASS"}]}
 
 
 def test_gold_recovery_publishes_original_silver_lineage():
@@ -82,5 +87,12 @@ def test_missing_silver_snapshot_prevents_publication():
 def test_partial_gold_commit_without_seven_snapshots_does_not_publish():
     del s3.gold["snapshot_ids"]["fato_sessoes"]
     with pytest.raises(ValueError, match="snapshot Gold ausente"):
+        publisher.handler({"run_id": "new"}, None)
+    assert ddb.pointer == "previous" and not ddb.writes
+
+
+def test_missing_or_failed_reconciliation_preserves_pointer():
+    s3.report["checks"][0]["status"] = "FAIL"
+    with pytest.raises(ValueError, match="reconciliação"):
         publisher.handler({"run_id": "new"}, None)
     assert ddb.pointer == "previous" and not ddb.writes

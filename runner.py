@@ -1,6 +1,6 @@
 """Orquestrador da Aula 25, inspirado no runner da Aula 24.
 
-Uso: python runner.py initial|delta|replay|verify|trace-gold|snapshots|fail-demo|questions|cleanup
+Uso: python runner.py initial|delta|replay|verify|trace-gold|snapshots|fail-demo|quality|questions|cleanup
 """
 import argparse
 import hashlib
@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parent
 TF=ROOT/'terraform'
 EVID=ROOT/'evidencias'; EVID.mkdir(exist_ok=True)
 parser=argparse.ArgumentParser()
-parser.add_argument('action',choices=['initial','delta','replay','verify','trace-gold','snapshots','fail-demo','questions','cleanup'])
+parser.add_argument('action',choices=['initial','delta','replay','verify','trace-gold','snapshots','fail-demo','quality','questions','cleanup'])
 a=parser.parse_args()
 
 
@@ -209,6 +209,26 @@ def trace_gold():
           f'{len(checked)} objetos Bronze, 7 tabelas. Evidência: {path}')
 
 
+def quality():
+    """Exibe somente resultados produzidos pelo Glue, sem valores esperados fixos."""
+    pointer=ddb.get_item(TableName=o['operations_table'],Key={'run_id':{'S':'PUBLISHED'}},ConsistentRead=True).get('Item',{})
+    run_id=pointer.get('published_run_id',{}).get('S')
+    if not run_id: raise RuntimeError('Nenhuma versão PUBLISHED')
+    gold=json.loads(s3.get_object(Bucket=o['buckets']['results'],Key=f'manifestos/gold/{run_id}.json')['Body'].read())
+    silver_uri=gold['silver_operational_manifest']; parsed=urlparse(silver_uri)
+    silver=json.loads(s3.get_object(Bucket=parsed.netloc,Key=parsed.path.lstrip('/'))['Body'].read())
+    report_uri=gold.get('reconciliation_uri')
+    report={}
+    if report_uri:
+        parsed=urlparse(report_uri); report=json.loads(s3.get_object(Bucket=parsed.netloc,Key=parsed.path.lstrip('/'))['Body'].read())
+    result={'run_id':run_id,'silver_run_id':silver.get('run_id'),'quality_status':silver.get('quality_status','LEGACY_UNKNOWN'),
+            'quality_summary':silver.get('quality_summary'),'quality_report_uri':silver.get('quality_report_uri'),
+            'anomalies_uri':silver.get('anomalies_uri'),'reconciliation_status':report.get('status','LEGACY_UNKNOWN'),
+            'reconciliation_uri':report_uri,'silver_snapshot_ids':silver.get('snapshot_ids'),'gold_snapshot_ids':gold.get('snapshot_ids')}
+    evidence('quality',result)
+    print(json.dumps(result,ensure_ascii=False,indent=2,default=str))
+
+
 if a.action=='initial':
     start_pipeline(upload('inicial'));verify('249.70');snapshots()
 elif a.action=='delta':
@@ -218,6 +238,7 @@ elif a.action=='replay':
 elif a.action=='verify':verify()
 elif a.action=='trace-gold':trace_gold()
 elif a.action=='snapshots':snapshots()
+elif a.action=='quality':quality()
 elif a.action=='fail-demo':
     # O arquivo inválido permanece versionado para auditoria.
     key=f'pagamentos/falha-{uuid.uuid4().hex}.jsonl'

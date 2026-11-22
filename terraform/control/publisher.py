@@ -35,6 +35,23 @@ def validate(run_id):
     for name in SILVER:
         if not silver.get("snapshot_ids", {}).get(name):
             raise ValueError(f"snapshot Silver ausente: {name}")
+    # Política explícita: manifestos legados continuam legíveis para consulta,
+    # porém não podem avançar PUBLISHED sem reconciliação verificável.
+    if gold.get("reconciliation_schema_version") != "1" or gold.get("reconciliation_status") != "PASS":
+        raise ValueError("manifesto Gold sem reconciliação compatível")
+    report_uri = urlparse(gold.get("reconciliation_uri", ""))
+    if report_uri.scheme != "s3" or report_uri.netloc != os.environ["RESULTS_BUCKET"]:
+        raise ValueError("relatório de reconciliação fora do bucket de resultados")
+    report = manifest(report_uri.path.lstrip("/"))
+    if (report.get("run_id") != run_id or str(report.get("attempt_id")) != str(gold.get("attempt_id"))
+            or report.get("source_silver_run_id") != gold.get("source_silver_run_id")
+            or report.get("silver_snapshot_ids") != silver.get("snapshot_ids")
+            or report.get("gold_snapshot_ids") != gold.get("snapshot_ids")
+            or report.get("status") != "PASS"):
+        raise ValueError("relatório de reconciliação incompatível")
+    checks = report.get("checks")
+    if not isinstance(checks, list) or not checks or any(check.get("status") != "PASS" or not check.get("id") for check in checks):
+        raise ValueError("reconciliação Gold sem verificações aprovadas")
     return gold, silver
 
 

@@ -60,6 +60,45 @@ Athena engine 3 / Glue Data Catalog -> SQL atual + FOR VERSION AS OF
 - O ETL valida chaves, mas o Iceberg **não impõe FK** automaticamente.
 - `historico_pagamentos` preserva eventos do negócio mesmo após a expiração eventual de snapshots.
 
+## Qualidade, auditoria e reconciliação
+
+Bronze continua sendo a evidência imutável: cada arquivo é identificado por bucket, chave, `VersionId`, SHA-256 e manifesto. A Lambda `receipt` mantém a Quarantine e o ledger para violações do contrato de objeto; ela não relê arquivos inteiros apenas para contar registros.
+
+Silver lê a versão indicada no manifesto e registra a qualidade em `Results`:
+
+```text
+qualidade/
+├── bronze/run_id=<run>/resumo.json                 # previsto para consumo operacional
+├── silver/run_id=<run>/attempt_id=<n>/resumo.json
+├── silver/anomalias/run_id=<run>/attempt_id=<n>/   # Parquet
+└── gold/run_id=<run>/attempt_id=<n>/reconciliacao.json
+```
+
+Cada anomalia Silver contém `run_id`, tentativa, dataset, chave de negócio, categoria, hash do registro, URI do objeto Bronze com `VersionId`, posição física, valores relevantes e, para duplicatas, a ocorrência preservada. CSV e JSONL são lidos como registros de linha física; CSV com registros multilinha não faz parte deste contrato, portanto a posição nunca é inventada. A tabela externa `qualidade_silver_anomalias` permite consultar o Parquet no Athena.
+
+- **DUPLICATE_IDENTICAL**: mesma chave e mesmos valores normalizados. Silver preserva a menor tupla ordenada por `origem_arquivo`, posição física e identificador de ocorrência, e grava as descartadas.
+- **KEY_CONFLICT**: mesma chave com conteúdo de negócio diferente no mesmo lote. Todas as ocorrências são gravadas e o lote falha antes de publicar Silver válido.
+- **Atualização incremental**: uma chave recebida substitui o estado anterior da mesma chave; não é duplicata dentro do lote.
+- **Replay**: o mesmo lote recria somente a mesma versão lógica e grava artefatos no escopo `run_id`/tentativa, sem duplicar fatos ou receita.
+
+O manifesto Silver preserva os campos anteriores e acrescenta `quality_schema_version`, `quality_status`, `quality_summary`, `quality_report_uri` e `anomalies_uri`. A ausência desses campos significa **LEGACY_UNKNOWN**, nunca aprovação implícita.
+
+Gold calcula receita, valor bruto, grão de itens e grão de sessões diretamente dos snapshots Silver antes dos commits. O relatório de reconciliação registra valores esperados e observados, identificadores dos snapshots e checks `PASS` ou `FAIL`. O publisher exige um relatório da mesma execução, tentativa e conjunto de snapshots; manifesto ou relatório legado não avança `PUBLISHED`.
+
+### Investigação no Athena
+
+Após uma execução, execute:
+
+```bash
+python runner.py quality
+```
+
+Use [07_qualidade_silver.sql](sql/07_qualidade_silver.sql) para localizar a duplicata de `P1042`, incluindo arquivo, versão e posição da ocorrência descartada. Use [08_resumo_qualidade.sql](sql/08_resumo_qualidade.sql) para os contadores por dataset e [09_reconciliacao_gold.sql](sql/09_reconciliacao_gold.sql) junto ao `reconciliation_uri` apresentado pelo runner.
+
+No arquivo `pedidos/lote_001.csv`, Bronze preserva as cinco linhas. Silver mantém quatro pedidos, registra uma ocorrência `DUPLICATE_IDENTICAL` de `P1042` e referencia a ocorrência preservada. A carga inicial continua com receita de R$ 249,70; o delta com estorno continua em R$ 198,80.
+
+No AWS Academy, valide com `python runner.py initial`, `delta`, `replay`, `quality` e `trace-gold`. A execução Glue e Athena gera custo enquanto está ativa. Os testes unitários não exigem conta AWS; a validação integrada deve ser executada em uma conta do laboratório e não é substituída pelos testes locais.
+
 ## Pré-requisitos
 
 - Conta e região AWS Academy com serviços Glue, S3, Athena e Glue Catalog acessíveis. Permissões e serviços variam entre laboratórios: **não há garantia de que todos os recursos sejam liberados**.

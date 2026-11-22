@@ -50,8 +50,10 @@ tempo=(datas.groupBy("data")
        .agg(F.concat_ws(",",F.sort_array(F.collect_set("origem"))).alias("origem_arquivos"))
        .select(F.date_format("data","yyyyMMdd").cast("int").alias("sk_tempo"),
                "data", F.year("data").alias("ano"),F.month("data").alias("mes"),"origem_arquivos"))
-cliente=c.select(F.col("cliente_id").alias("sk_cliente"),"cliente","estado", "regiao_id", "origem_cliente").dropDuplicates(["sk_cliente"])
-produto=pr.select(F.col("produto_id").alias("sk_produto"),"produto","categoria", "origem_produto").dropDuplicates(["sk_produto"])
+# Não ocultar conflitos dimensionais: a verificação de unicidade abaixo deve
+# interromper a execução, em vez de escolher uma linha arbitrariamente.
+cliente=c.select(F.col("cliente_id").alias("sk_cliente"),"cliente","estado", "regiao_id", "origem_cliente")
+produto=pr.select(F.col("produto_id").alias("sk_produto"),"produto","categoria", "origem_produto")
 canal=(p.select(F.col("canal_id").alias("sk_canal"),F.col("origem_pedido").alias("origem"))
        .union(e.select(F.col("canal_id").alias("sk_canal"),F.col("origem_arquivo").alias("origem")))
        .groupBy("sk_canal")
@@ -89,15 +91,59 @@ TABLES={
  "fato_sessoes": (sessoes,"sk_sessao","sk_sessao STRING, sk_tempo INT, sk_canal STRING, houve_checkout INT, origem_eventos STRING",None),
 }
 
+# Reconciliação independente do fato: usa itens, pedidos e pagamentos Silver
+# diretamente, sem dimensões nem a cadeia de joins usada para produzir Gold.
+checks = []
+def reconcile(check_id, expected, actual, detail):
+    expected = str(expected); actual = str(actual)
+    checks.append({"id": check_id, "expected_value": expected, "actual_value": actual,
+                   "difference": "0" if expected == actual else "nonzero", "status": "PASS" if expected == actual else "FAIL", "detail": detail})
+
+expected_sales = (i.join(p.select("pedido_id", "status"), "pedido_id")
+                  .join(pg.select("pedido_id", "resultado"), "pedido_id", "left")
+                  .select("item_id", "quantidade", "preco_unitario", "status", F.coalesce("resultado", F.lit("sem_pagamento")).alias("resultado"))
+                  .withColumn("valor", (F.col("quantidade") * F.col("preco_unitario")).cast("decimal(14,2)")))
+expected_item_count = expected_sales.count()
+expected_gross = expected_sales.agg(F.coalesce(F.sum("valor"), F.lit(0)).cast("decimal(18,2)")).first()[0]
+expected_revenue = expected_sales.agg(F.coalesce(F.sum(F.when((F.col("status") == "pago") & (F.col("resultado") == "aprovado"), F.col("valor")).otherwise(F.lit(0))), F.lit(0)).cast("decimal(18,2)")).first()[0]
+actual_item_count = fato.count()
+actual_gross = fato.agg(F.coalesce(F.sum("valor_bruto"), F.lit(0)).cast("decimal(18,2)")).first()[0]
+actual_revenue = fato.agg(F.coalesce(F.sum("receita_liquida"), F.lit(0)).cast("decimal(18,2)")).first()[0]
+reconcile("FACT_ITEM_GRAIN", expected_item_count, actual_item_count, "itens Silver versus fato candidata")
+reconcile("FACT_GROSS_VALUE", expected_gross, actual_gross, "valor bruto calculado diretamente da Silver")
+reconcile("FACT_NET_REVENUE", expected_revenue, actual_revenue, "pedidos pagos com pagamentos aprovados")
+reconcile("FACT_ITEM_UNIQUENESS", actual_item_count, fato.select("item_id").distinct().count(), "item_id é o grão da fato")
+expected_sessions = e.select("sessao", "data", "canal_id").distinct().count()
+reconcile("SESSION_GRAIN", expected_sessions, sessoes.count(), "sessão + data + canal")
+quality_prefix = f"qualidade/gold/run_id={args['RUN_ID']}/attempt_id={attempt_id}"
+report_key = f"{quality_prefix}/reconciliacao.json"
+def persist_reconciliation(status, snapshots=None):
+    report = {"reconciliation_schema_version": "1", "run_id": args["RUN_ID"], "attempt_id": attempt_id,
+              "source_silver_run_id": source_silver_run_id, "silver_snapshot_ids": snapshot_ids,
+              "gold_snapshot_ids": snapshots or {}, "checks": checks, "status": status,
+              "started_at": started_at, "finished_at": datetime.now(timezone.utc).isoformat()}
+    s3.put_object(Bucket=args["RESULTS"], Key=report_key, Body=json.dumps(report, default=str, indent=2).encode(), ContentType="application/json")
+    return f"s3://{args['RESULTS']}/{report_key}"
+if any(check["status"] != "PASS" for check in checks):
+    persist_reconciliation("FAIL")
+    raise ValueError("Reconciliação Gold falhou antes dos commits")
+if c.groupBy("regiao_id").agg(F.countDistinct("regiao").alias("n")).filter("n > 1").limit(1).count():
+    persist_reconciliation("FAIL")
+    raise ValueError("Conflito dimensional: regiao_id possui nomes divergentes")
+
 # Validação da candidata antes de qualquer commit por tabela.
 for name, (frame, key, _schema, _partition) in TABLES.items():
     if frame.limit(1).count() == 0:
+        persist_reconciliation("FAIL")
         raise ValueError(f"Gold candidata vazia: {name}")
     if frame.filter(F.col(key).isNull()).limit(1).count():
+        persist_reconciliation("FAIL")
         raise ValueError(f"Chave Gold nula: {name}")
     if frame.groupBy(key).count().filter("count > 1").limit(1).count():
+        persist_reconciliation("FAIL")
         raise ValueError(f"Chave Gold duplicada: {name}")
 if fato.filter("receita_liquida < 0 OR valor_bruto < 0").limit(1).count():
+    persist_reconciliation("FAIL")
     raise ValueError("Indicadores financeiros negativos")
 
 for name,(df,key,schema,partition) in TABLES.items():
@@ -122,8 +168,9 @@ for name in TABLES:
     if spark.read.format("iceberg").option("snapshot-id", gold_snapshots[name]).load(f"{cat}.{name}").limit(1).count() == 0:
         raise ValueError(f"Snapshot Gold vazio: {name}")
 key=f"manifestos/gold/{args['RUN_ID']}.json"
+reconciliation_uri = persist_reconciliation("PASS", gold_snapshots)
 s3.put_object(Bucket=args["RESULTS"],Key=key,Body=json.dumps({"layer":"gold","run_id":args["RUN_ID"],"iceberg_metadata_locations":metadados,
  "silver_operational_manifest":f"s3://{args['RESULTS']}/{silver_key}",
  "source_silver_run_id":source_silver_run_id,"batch_id":silver_manifest["batch_id"],"snapshot_ids":gold_snapshots,"status":"CANDIDATE","attempt_id":attempt_id,"glue_job_run_id":job_run_id,"started_at":started_at,"finished_at":datetime.now(timezone.utc).isoformat(),
- "atomicity_scope":"per-table","grain":"item_id in fato_itens_venda"},indent=2).encode(),ContentType="application/json")
+ "atomicity_scope":"per-table","grain":"item_id in fato_itens_venda","reconciliation_schema_version":"1","reconciliation_status":"PASS","reconciliation_uri":reconciliation_uri},indent=2).encode(),ContentType="application/json")
 job.commit()

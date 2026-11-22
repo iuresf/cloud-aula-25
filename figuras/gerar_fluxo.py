@@ -69,13 +69,14 @@ sections = [
         ("Terraform data + S3", "terraform_data.bucket[bronze]", "Bucket Bronze", ["buckets.sh create/destroy", "versionamento de objetos"]),
         ("Terraform data + S3", "terraform_data.bucket[silver]", "Bucket Silver", ["warehouse Iceberg Silver", "buckets.sh create/destroy"]),
         ("Terraform data + S3", "terraform_data.bucket[gold]", "Bucket Gold", ["warehouse Iceberg Gold", "buckets.sh create/destroy"]),
-        ("Terraform data + S3", "terraform_data.bucket[results]", "Bucket Results", ["scripts, manifestos e resultados Athena"]),
+        ("Terraform data + S3", "terraform_data.bucket[results]", "Bucket Results", ["scripts, manifestos, qualidade e Athena"]),
         ("Terraform data + S3", "terraform_data.bucket[quarantine]", "Bucket Quarantine", ["arquivos que violam contrato ou hash"]),
         ("Terraform data + S3", "terraform_data.bucket[audit]", "Bucket Audit", ["destino do CloudTrail", "versionamento de objetos"]),
         ("S3 lifecycle", "aws_s3_bucket_lifecycle_configuration.layers[bronze]", "Ciclo Bronze", ["aborta multipart incompleto em 7 dias"]),
         ("S3 lifecycle", "aws_s3_bucket_lifecycle_configuration.layers[silver] + [gold]", "Ciclo Silver e Gold", ["aborta multipart incompleto em 7 dias"]),
         ("S3 lifecycle", "aws_s3_bucket_lifecycle_configuration.layers[results] + [quarantine] + [audit]", "Ciclo Results, Quarantine e Audit", ["aborta multipart incompleto em 7 dias"]),
         ("AWS Glue Data Catalog", "aws_glue_catalog_database.this", "Database a25_iceberg", ["catálogo de tabelas e schemas Iceberg"]),
+        ("AWS Glue Data Catalog", "aws_glue_catalog_table.silver_quality_anomalies", "Anomalias Silver", ["Parquet Results/qualidade", "consulta Athena por run e regra"]),
     ]),
     ("ETL, CATÁLOGO E CONSUMO", [
         ("S3 object", "aws_s3_object.script[silver]", "Script Silver", ["results/jobs/silver.py"]),
@@ -209,8 +210,8 @@ route([(1250, 527), (1250, 575), (1570, 575), (1570, 527)], "#d98d21", "5 6")
 
 flow_node(355, 640, 260, "Lambda Orchestrator", "nome idempotente batch_id", icon_name="lambda")
 flow_node(700, 640, 280, "Step Functions", "retry transitório; redrive", icon_name="step-functions")
-flow_node(1065, 640, 250, "Glue Silver", "MERGE por chave", icon_name="glue")
-flow_node(1400, 640, 250, "Glue Gold", "dimensões e fatos", icon_name="glue")
+flow_node(1065, 640, 250, "Glue Silver", "qualidade, dedup e snapshots", icon_name="glue")
+flow_node(1400, 640, 250, "Glue Gold", "reconciliação, dimensões e fatos", icon_name="glue")
 flow_node(1735, 640, 250, "S3 Gold + Catalog", "snapshots Iceberg", icon_name="s3")
 flow_node(2070, 640, 250, "Athena Consumer", "consulta com snapshots fixados", icon_name="athena")
 route([(2225, 342), (2415, 342), (2415, 600), (485, 600), (485, 635)], "#177e9d")
