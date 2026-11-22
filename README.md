@@ -93,7 +93,7 @@ Após uma execução, execute:
 python runner.py quality
 ```
 
-Use [07_qualidade_silver.sql](sql/07_qualidade_silver.sql) para localizar a duplicata de `P1042`, incluindo arquivo, versão e posição da ocorrência descartada. Use [08_resumo_qualidade.sql](sql/08_resumo_qualidade.sql) para os contadores por dataset e [09_reconciliacao_gold.sql](sql/09_reconciliacao_gold.sql) junto ao `reconciliation_uri` apresentado pelo runner.
+Use [07_qualidade_silver.sql](sql/07_qualidade_silver.sql) para localizar a duplicata de `P1042`, incluindo arquivo, versão e posição da ocorrência descartada. Use [08_resumo_qualidade.sql](sql/08_resumo_qualidade.sql) para os contadores por dataset e [09_reconciliacao_gold.sql](sql/09_reconciliacao_gold.sql) junto ao `reconciliation_uri` apresentado pelo runner. O roteiro consolidado [10_operacao_athena.sql](sql/10_operacao_athena.sql) cobre esquema estrela, grão, snapshots, time travel, duplicações, conflitos e falhas de validação.
 
 No arquivo `pedidos/lote_001.csv`, Bronze preserva as cinco linhas. Silver mantém quatro pedidos, registra uma ocorrência `DUPLICATE_IDENTICAL` de `P1042` e referencia a ocorrência preservada. A carga inicial continua com receita de R$ 249,70; o delta com estorno continua em R$ 198,80.
 
@@ -209,6 +209,41 @@ python runner.py questions   # executa perguntas, inclusive time travel
 
 No Athena, selecione o **database** do `terraform output database` e o **workgroup** do `terraform output workgroup`; execute os arquivos em `sql/` (um statement por vez). Para time travel, descubra `snapshot_id` REAL na tabela `"fato_itens_venda$snapshots"` e substitua o placeholder **somente depois do delta**. A consulta histórica revela a receita dos itens do P1042 no snapshot inicial, desde que ele não tenha sido expirado.
 Use também `sql/06_rastreabilidade.sql` para localizar, por `item_id`, os arquivos Bronze que compõem a linha Gold. O `etl_run_id` liga a linha aos manifestos Gold e Silver; o `VersionId` e SHA-256 ficam no manifesto Silver. `runner.py trace-gold` confere os arquivos e hashes das sete tabelas Gold.
+
+### Consultas no Athena pelo terminal
+
+```bash
+export REGION="$(terraform -chdir=terraform output -raw region)"
+export DATABASE="$(terraform -chdir=terraform output -raw database)"
+export WORKGROUP="$(terraform -chdir=terraform output -raw workgroup)"
+
+# Execute apenas um SELECT por chamada; copie o statement de sql/10_operacao_athena.sql.
+aws athena start-query-execution \
+  --region "$REGION" \
+  --work-group "$WORKGROUP" \
+  --query-execution-context "Database=$DATABASE" \
+  --query-string "SELECT COUNT(*) AS itens FROM fato_itens_venda"
+```
+
+Após receber o `QueryExecutionId`, consulte o estado e o resultado:
+
+```bash
+aws athena get-query-execution --region "$REGION" --query-execution-id QUERY_EXECUTION_ID
+aws athena get-query-results --region "$REGION" --query-execution-id QUERY_EXECUTION_ID
+```
+
+As massas em `dados/erros/` simulam erros de **ingestão** antes de Silver: metadados ausentes, tamanho divergente e SHA-256 divergente. Elas não chegam à tabela Athena, pois são enviadas para Quarantine e recebem `REJECTED` no ledger DynamoDB. Investigue-as com:
+
+```bash
+aws dynamodb scan \
+  --region "$REGION" \
+  --table-name "$(terraform -chdir=terraform output -raw batches_table)" \
+  --filter-expression "#s = :rejected" \
+  --expression-attribute-names '{"#s":"status"}' \
+  --expression-attribute-values '{":rejected":{"S":"REJECTED"}}'
+
+aws logs tail "/aws/lambda/a25-iceberg-receipt" --region "$REGION" --since 1h
+```
 
 ### Resultados esperados (total da Gold)
 
