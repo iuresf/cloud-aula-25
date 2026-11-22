@@ -1,7 +1,7 @@
 """Cliente didático da Aula 25.
 
 Envia lotes pela API de ingestão e consulta resultados já produzidos na AWS.
-Uso: python runner.py initial|delta|replay|fail-demo|finalize|status|verify|trace-gold|snapshots|quality|questions|cleanup
+Uso: python runner.py initial|delta|replay|fail-demo|status|verify|trace-gold|snapshots|quality|questions|cleanup
 """
 import argparse
 import base64
@@ -25,8 +25,8 @@ ROOT=Path(__file__).resolve().parent
 TF=ROOT/'terraform'
 EVID=ROOT/'evidencias'; EVID.mkdir(exist_ok=True)
 parser=argparse.ArgumentParser()
-parser.add_argument('action',choices=['initial','delta','replay','fail-demo','finalize','status','verify','trace-gold','snapshots','quality','questions','cleanup'])
-parser.add_argument('--batch-id',help='Identificador do lote, exigido por finalize e status.')
+parser.add_argument('action',choices=['initial','delta','replay','fail-demo','status','verify','trace-gold','snapshots','quality','questions','cleanup'])
+parser.add_argument('--batch-id',help='Identificador do lote, exigido por status.')
 a=parser.parse_args()
 
 
@@ -75,7 +75,7 @@ def api_post(payload, token):
 
 
 def submit(stage, files=None):
-    """Envia somente os arquivos. A AWS cria o manifesto e orquestra após finalize."""
+    """Envia dados e finalize.json; a AWS cria o manifesto e orquestra."""
     origin=ROOT/'dados'/stage
     operation='initial' if stage=='inicial' else 'incremental'
     batch_id=f'batch_{uuid.uuid4().hex}'
@@ -94,19 +94,22 @@ def submit(stage, files=None):
         request=Request(upload['upload_url'],data=data,headers=upload['required_headers'],method='PUT')
         with urlopen(request,timeout=60) as response:
             if response.status not in (200,204): raise RuntimeError(f'Upload S3 inesperado: HTTP {response.status}')
-        sent.append({'dataset_type':dataset,'file_name':file.name,'ingestion_id':upload['ingestion_id']})
+        sent.append({'dataset_type':dataset,'file_name':file.name,'ingestion_id':upload['ingestion_id'],
+                     's3_key':upload['s3_key'],'sha256':sha,'size_bytes':len(data)})
+    control=json.dumps({'type':'batch_finalize','batch_id':batch_id,'operation':operation,'files':[
+        {key:item[key] for key in ('dataset_type','s3_key','sha256','size_bytes')} for item in sent
+    ]},sort_keys=True,separators=(',',':')).encode()
+    control_sha=hashlib.sha256(control).hexdigest()
+    status,upload=api_post({'batch_id':batch_id,'operation':operation,'dataset_type':'batch_finalize',
+                            'file_name':'finalize.json','source_system':'runner','schema_version':'1',
+                            'content_type':'application/json','size_bytes':len(control),'sha256':control_sha},token)
+    if status != 201: raise RuntimeError(f'Sessão do finalize.json inesperada: HTTP {status}')
+    with urlopen(Request(upload['upload_url'],data=control,headers=upload['required_headers'],method='PUT'),timeout=60) as response:
+        if response.status not in (200,204): raise RuntimeError(f'Upload do finalize.json inesperado: HTTP {response.status}')
     evidence('uploads-submetidos',{'batch_id':batch_id,'operation':operation,'files':sent})
-    print(json.dumps({'batch_id':batch_id,'status':'UPLOADED','files':sent,
-                      'next_step':f'python runner.py finalize --batch-id {batch_id}'},ensure_ascii=False,indent=2))
+    print(json.dumps({'batch_id':batch_id,'status':'FINALIZE_UPLOADED','files':sent,
+                      'next_step':f'python runner.py status --batch-id {batch_id}'},ensure_ascii=False,indent=2))
     return batch_id
-
-
-def finalize(batch_id):
-    """Pede à API que feche o lote; SQS/Lambda passam a controlar a execução."""
-    status,result=api_post({'action':'finalize','batch_id':batch_id},access_token())
-    if status != 202: raise RuntimeError(f'Finalização inesperada: HTTP {status}')
-    evidence('lote-finalizado',result)
-    print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
 def batch_status(batch_id):
@@ -252,9 +255,6 @@ elif a.action=='delta':
     submit('delta')
 elif a.action=='replay':
     submit('delta')
-elif a.action=='finalize':
-    if not a.batch_id: parser.error('--batch-id é obrigatório para finalize')
-    finalize(a.batch_id)
 elif a.action=='status':
     if not a.batch_id: parser.error('--batch-id é obrigatório para status')
     batch_status(a.batch_id)

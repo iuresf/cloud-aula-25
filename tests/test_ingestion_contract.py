@@ -148,24 +148,19 @@ def test_invalid_sha_rejected():
     assert api.handler({"body": json.dumps(payload)}, None)["statusCode"] == 400
 
 
-def test_incomplete_batch_does_not_dispatch():
-    table.put_item({"batch_id": "batch_1", "record_id": "META", "operation": "initial", "status": "WAITING_FOR_BATCH"})
-    table.put_item({"batch_id": "batch_1", "record_id": "FILE#1", "dataset_type": "pedidos", "status": "RECEIVED"})
-    result = api.handler({"body": json.dumps({"action": "finalize", "batch_id": "batch_1"})}, None)
-    assert result["statusCode"] == 409 and not sqs.sent
+def test_finalize_json_gets_its_own_presigned_control_upload():
+    body = b'{"type":"batch_finalize"}'
+    payload = {"batch_id": "batch_1", "operation": "initial", "dataset_type": "batch_finalize",
+               "file_name": "finalize.json", "sha256": hashlib.sha256(body).hexdigest(),
+               "source_system": "erp", "schema_version": "1", "content_type": "application/json", "size_bytes": len(body)}
+    result = api.handler({"body": json.dumps(payload)}, None)
+    assert result["statusCode"] == 201
+    assert s3.presigns[0]["Key"].startswith("ingestion/_control/")
 
 
-def test_complete_batch_finalizes_once_and_sends_ready():
-    table.put_item({"batch_id": "batch_1", "record_id": "META", "operation": "initial", "status": "WAITING_FOR_BATCH"})
-    for name in ("pedidos", "itens", "clientes", "produtos", "pagamentos", "eventos"):
-        table.put_item({"batch_id": "batch_1", "record_id": f"FILE#{name}", "ingestion_id": name,
-                        "dataset_type": name, "source_system": "erp", "schema_version": "1",
-                        "s3_key": f"{name}/file", "version_id": "v1", "sha256": "a"*64,
-                        "size_bytes": 3, "status": "RECEIVED"})
+def test_finalize_is_not_an_api_action():
     result = api.handler({"body": json.dumps({"action": "finalize", "batch_id": "batch_1"})}, None)
-    assert result["statusCode"] == 202 and len(sqs.sent) == 1
-    manifest = json.loads(s3.objects[("results", "manifestos/bronze/batch_1.json")])
-    assert validate_manifest(manifest) == {"pedidos", "itens", "clientes", "produtos", "pagamentos", "eventos"}
+    assert result["statusCode"] == 400 and not sqs.sent
 
 
 def receipt_event():
@@ -188,7 +183,7 @@ def test_receipt_rejects_missing_metadata(monkeypatch):
     monkeypatch.setattr(s3, "head_object", lambda **kw: {**original(**kw), "Metadata": {"ingestion-id": "upload-1"}})
     assert receipt.handler(receipt_event(), None) == {"batchItemFailures": []}
     assert len(s3.copies) == 1
-    assert ledger.updates[0]["ExpressionAttributeValues"][":status"]["S"] == "REJECTED"
+    assert ledger.updates[0]["ExpressionAttributeValues"][":rejected"]["S"] == "REJECTED"
 
 
 def test_receipt_hash_mismatch_quarantined(monkeypatch):

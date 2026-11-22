@@ -193,18 +193,16 @@ Verifique no console: buckets `bronze/silver/gold/results`; database Glue; jobs 
 export INGESTION_CLIENT_ID="$(terraform -chdir=terraform output -raw ingestion_client_id)"
 export INGESTION_CLIENT_SECRET="$(terraform -chdir=terraform output -raw ingestion_client_secret)"
 
-python runner.py initial     # submete os seis arquivos do lote inicial pela API
-# Copie o batch_id retornado e aguarde a confirmação dos uploads pela AWS.
-python runner.py status --batch-id BATCH_ID
-python runner.py finalize --batch-id BATCH_ID  # API -> SQS -> Lambda -> Step Functions
+python runner.py initial     # submete arquivos e o finalize.json pela API
+# Copie o batch_id retornado; a chegada do finalize.json aciona a AWS.
 python runner.py status --batch-id BATCH_ID
 
 # Após o estado PUBLISHED, são apenas consultas de verificação:
 python runner.py verify      # valida R$ 249,70
 python runner.py snapshots   # guarda IDs reais dos snapshots
-python runner.py delta       # submete o lote incremental; finalize usando o batch_id retornado
-python runner.py replay      # submete novamente o mesmo delta; finalize usando o batch_id retornado
-python runner.py fail-demo   # submete pagamento inválido; finalize para testar a falha Silver
+python runner.py delta       # submete o lote incremental e seu finalize.json
+python runner.py replay      # submete novamente o mesmo delta e seu finalize.json
+python runner.py fail-demo   # submete pagamento inválido e seu finalize.json
 python runner.py trace-gold  # confere cada linha Gold até VersionId e SHA-256 do Bronze
 python runner.py questions   # executa perguntas, inclusive time travel
 ```
@@ -277,13 +275,13 @@ O fluxo anterior iniciava Glue para cada objeto recebido, e Silver lia diretóri
 Cognito / API Gateway / WAF
   → POST /ingestions (sessão: batch_id, operation, dataset_type, hash, tamanho)
   → S3 Bronze versionado → SQS object-events → Receipt → ledger de objetos + lote
-  → POST /ingestions {action:"finalize",batch_id} → manifesto Bronze → SQS ready
+  → PUT finalize.json versionado → Receipt valida o lote → manifesto Bronze → SQS ready
   → Orchestrator → Step Functions Standard (Silver → Gold → Publish)
   → S3 Results: manifestos Silver/Gold + ponteiro DynamoDB PUBLISHED
   → Athena: FOR VERSION AS OF em cada tabela, usando os sete IDs publicados
 ```
 
-O runner didático (`initial`, `delta`, `replay`, `fail-demo`, `finalize`, `status`, `verify`, `trace-gold`, `snapshots`) usa a API de ingestão como qualquer cliente externo. `initial` exige os seis datasets; `incremental` aceita apenas fontes alteradas se houver Silver anterior e uma versão publicada. Os datasets são `pedidos`, `itens`, `clientes`, `produtos`, `pagamentos` e `eventos`, com `schema_version=1`. O processamento mantém as regras dos pedidos P1042, P1044 e P1045. `initial`, `delta`, `replay` e `fail-demo` apenas criam sessões e enviam arquivos. `finalize` fecha explicitamente o lote na API; então SQS, Lambda `orchestrator` e Step Functions assumem toda a orquestração. `status` somente consulta o ledger do lote. Uma sessão pendente ou rejeitada impede a finalização.
+O runner didático (`initial`, `delta`, `replay`, `fail-demo`, `status`, `verify`, `trace-gold`, `snapshots`) usa a API de ingestão como qualquer cliente externo. `initial` exige os seis datasets; `incremental` aceita apenas fontes alteradas se houver Silver anterior e uma versão publicada. Os datasets são `pedidos`, `itens`, `clientes`, `produtos`, `pagamentos` e `eventos`, com `schema_version=1`. O processamento mantém as regras dos pedidos P1042, P1044 e P1045. `initial`, `delta`, `replay` e `fail-demo` criam sessões, enviam os arquivos e enviam por último um `finalize.json` versionado com a lista, hashes e tamanhos dos objetos. A Lambda `receipt` valida esse arquivo e somente então cria o manifesto Bronze e entrega o lote para SQS, Lambda `orchestrator` e Step Functions. `status` somente consulta o ledger do lote.
 
 Exemplo de criação de sessão (usar Bearer Cognito e `ingestion_api_url` de `terraform output`):
 
@@ -291,7 +289,7 @@ Exemplo de criação de sessão (usar Bearer Cognito e `ingestion_api_url` de `t
 {"batch_id":"lote_002","operation":"incremental","dataset_type":"pagamentos","file_name":"lote_002.jsonl","source_system":"gateway","schema_version":"1","content_type":"application/x-ndjson","size_bytes":123,"sha256":"<64 caracteres hexadecimais>"}
 ```
 
-A resposta 201 contém `upload_url`, `s3_key`, `ingestion_id` e `required_headers`. Envie os bytes por PUT com **todos** esses cabeçalhos. Depois de todas as sessões ficarem `RECEIVED`, envie `{"action":"finalize","batch_id":"lote_002"}`. A resposta 202 contém o caminho do manifesto; 409 indica lote incompleto, upload pendente/rejeitado ou estado Silver insuficiente. O nome da execução é derivado de `batch_id`; reentrega da fila ready reutiliza o mesmo nome.
+A resposta 201 contém `upload_url`, `s3_key`, `ingestion_id` e `required_headers`. Envie os bytes por PUT com **todos** esses cabeçalhos. Por último, crie outra sessão com `dataset_type: "batch_finalize"` e envie o arquivo `finalize.json` contendo `batch_id`, operação e a lista exata de `dataset_type`, `s3_key`, SHA-256 e tamanho dos objetos. A Lambda `receipt` confere o controle e cria o manifesto Bronze; o nome da execução é derivado de `batch_id` e reentregas da fila ready reutilizam o mesmo nome.
 
 O manifesto Bronze contém `batch_id`, `operation` e a lista exata de arquivos com `ingestion_id`, `dataset_type`, `source_system`, `schema_version`, `s3_key`, `version_id`, `sha256`, `size_bytes` e `status`. Silver usa `GetObject` com `VersionId`, calcula SHA-256 sobre os bytes recebidos e grava esses bytes numa área `results/staging/silver/<run_id>/`. O Spark lê somente esses objetos materializados. Em incremental, lê o estado anterior pelos snapshots Silver publicados e cria um novo snapshot completo para cada tabela alterada; isso elimina resíduos de commits parciais de tentativas falhas. Gold também grava snapshots completos por tabela. `origem_arquivo` mantém o URI Bronze com `?versionId=...`; o manifesto Silver conserva `VersionId` e hash. Esse identificador percorre as origens da Gold, inclusive após replay. O staging não é a definição do lote e pode ser limpo somente quando todas as recuperações dependentes forem encerradas. Não há listagem geral da Bronze na seleção de entradas.
 
