@@ -1,10 +1,13 @@
-"""Orquestrador da Aula 25, inspirado no runner da Aula 24.
+"""Cliente didático da Aula 25.
 
-Uso: python runner.py initial|delta|replay|verify|trace-gold|snapshots|fail-demo|quality|questions|cleanup
+Envia lotes pela API de ingestão e consulta resultados já produzidos na AWS.
+Uso: python runner.py initial|delta|replay|fail-demo|finalize|status|verify|trace-gold|snapshots|quality|questions|cleanup
 """
 import argparse
+import base64
 import hashlib
 import json
+import os
 import subprocess
 import time
 import uuid
@@ -12,14 +15,18 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 import boto3
-from lakehouse.contracts import dataset_for_key, validate_manifest
+from lakehouse.contracts import dataset_for_key
 
 ROOT=Path(__file__).resolve().parent
 TF=ROOT/'terraform'
 EVID=ROOT/'evidencias'; EVID.mkdir(exist_ok=True)
 parser=argparse.ArgumentParser()
-parser.add_argument('action',choices=['initial','delta','replay','verify','trace-gold','snapshots','fail-demo','quality','questions','cleanup'])
+parser.add_argument('action',choices=['initial','delta','replay','fail-demo','finalize','status','verify','trace-gold','snapshots','quality','questions','cleanup'])
+parser.add_argument('--batch-id',help='Identificador do lote, exigido por finalize e status.')
 a=parser.parse_args()
 
 
@@ -40,64 +47,74 @@ if a.action=='cleanup':
 
 o=outputs()
 session=boto3.Session(region_name=o['region'])
-s3=session.client('s3');states=session.client('stepfunctions');athena=session.client('athena');ddb=session.client('dynamodb')
+s3=session.client('s3');athena=session.client('athena');ddb=session.client('dynamodb')
 
 
-def upload(stage):
-    origin=ROOT/'dados'/stage
-    refs=[]
-    for file in sorted(origin.rglob('*')):
-        if not file.is_file(): continue
-        key=file.relative_to(origin).as_posix()
-        data=file.read_bytes()
-        sha=hashlib.sha256(data).hexdigest()
-        put=s3.put_object(Bucket=o['buckets']['bronze'],Key=key,Body=data,Metadata={'sha256':sha})
-        refs.append({'s3_key':key,'dataset_type':dataset_for_key(key),'sha256':sha,'version_id':put.get('VersionId'),'size_bytes':len(data),'source_system':'runner','schema_version':'1','ingestion_id':uuid.uuid4().hex,'status':'RECEIVED'})
-    batch_id=f'batch_{uuid.uuid4().hex}'
-    manifest={'layer':'bronze','batch_id':batch_id,'operation':'initial' if stage=='inicial' else 'incremental','files':refs}
-    validate_manifest(manifest)
-    manifest_key=f'manifestos/bronze/{stage}-{uuid.uuid4().hex}.json'
-    s3.put_object(Bucket=o['buckets']['results'],Key=manifest_key,
-                  Body=json.dumps(manifest).encode('utf-8'),ContentType='application/json')
-    evidence('bronze',{'manifest':manifest_key,'files':refs})
-    return manifest_key
+def access_token():
+    """Obtém token de máquina; credenciais permanecem fora do repositório."""
+    client_id=os.environ.get('INGESTION_CLIENT_ID')
+    client_secret=os.environ.get('INGESTION_CLIENT_SECRET')
+    if not client_id or not client_secret:
+        raise RuntimeError('Defina INGESTION_CLIENT_ID e INGESTION_CLIENT_SECRET antes de enviar um lote.')
+    basic=base64.b64encode(f'{client_id}:{client_secret}'.encode()).decode()
+    request=Request(o['cognito_token_url'],data=urlencode({'grant_type':'client_credentials'}).encode(),
+                    headers={'Authorization':f'Basic {basic}','Content-Type':'application/x-www-form-urlencoded'},method='POST')
+    with urlopen(request,timeout=30) as response:
+        return json.loads(response.read())['access_token']
 
 
-def start_pipeline(bronze_manifest, expect_failure=False):
-    run_id=uuid.uuid4().hex
-    ddb.put_item(TableName=o['operations_table'], Item={'run_id': {'S': 'LOCK'}, 'owner': {'S': run_id}},
-                 ConditionExpression='attribute_not_exists(run_id)')
+def api_post(payload, token):
+    request=Request(o['ingestion_api_url'],data=json.dumps(payload).encode(),method='POST',
+                    headers={'Authorization':f'Bearer {token}','Content-Type':'application/json'})
     try:
-        execution=states.start_execution(
-        stateMachineArn=o['state_machine_arn'],
-        name=f"run-{run_id}",
-        input=json.dumps({'batch_id': json.loads(s3.get_object(Bucket=o['buckets']['results'], Key=bronze_manifest)['Body'].read())['batch_id'], 'run_id':run_id,'attempt_id':1,'start_from':'SILVER','glue_arguments':{'--RUN_ID':run_id,'--BRONZE_MANIFEST':bronze_manifest,'--ATTEMPT_ID':'1'}}))
-    except Exception:
-        ddb.delete_item(TableName=o['operations_table'],Key={'run_id':{'S':'LOCK'}},
-                        ConditionExpression='#owner=:owner', ExpressionAttributeNames={'#owner':'owner'}, ExpressionAttributeValues={':owner':{'S':run_id}})
-        raise
-    arn=execution['executionArn']
-    for _ in range(240):
-        info=states.describe_execution(executionArn=arn)
-        state=info['status']
-        if state in ('SUCCEEDED','FAILED','TIMED_OUT','ABORTED'):
-            try:
-                ddb.delete_item(TableName=o['operations_table'],Key={'run_id':{'S':'LOCK'}},
-                                ConditionExpression='#owner=:owner', ExpressionAttributeNames={'#owner':'owner'}, ExpressionAttributeValues={':owner':{'S':run_id}})
-            except ddb.exceptions.ConditionalCheckFailedException:
-                pass
-            evidence('step-functions',{'execution_arn':arn,'run_id':run_id,
-                                       'bronze_manifest':bronze_manifest,'status':state,
-                                       'output':info.get('output'),'error':info.get('error'),
-                                       'cause':info.get('cause')})
-            if expect_failure and state!='SUCCEEDED':
-                print('Falha controlada confirmada. Verifique snapshots anteriores.')
-                return
-            if state!='SUCCEEDED': raise RuntimeError(f"Step Functions: {state}: {info.get('cause')}")
-            if expect_failure: raise AssertionError('Falha esperada nao ocorreu')
-            return
-        time.sleep(5)
-    raise TimeoutError(f'Execucao excedeu 20 min: {arn}')
+        with urlopen(request,timeout=30) as response:
+            return response.status,json.loads(response.read())
+    except HTTPError as exc:
+        body=exc.read().decode()
+        raise RuntimeError(f'API de ingestão retornou HTTP {exc.code}: {body}') from exc
+
+
+def submit(stage, files=None):
+    """Envia somente os arquivos. A AWS cria o manifesto e orquestra após finalize."""
+    origin=ROOT/'dados'/stage
+    operation='initial' if stage=='inicial' else 'incremental'
+    batch_id=f'batch_{uuid.uuid4().hex}'
+    token=access_token()
+    sent=[]
+    candidates=sorted(origin.rglob('*')) if files is None else files
+    for file in candidates:
+        if not file.is_file(): continue
+        data=file.read_bytes(); sha=hashlib.sha256(data).hexdigest()
+        dataset='pagamentos' if stage=='falha' else dataset_for_key(file.relative_to(origin).as_posix())
+        content_type='text/csv' if file.suffix.lower()=='.csv' else 'application/x-ndjson'
+        status,upload=api_post({'batch_id':batch_id,'operation':operation,'dataset_type':dataset,
+                                'file_name':file.name,'source_system':'runner','schema_version':'1',
+                                'content_type':content_type,'size_bytes':len(data),'sha256':sha},token)
+        if status != 201: raise RuntimeError(f'Sessão de upload inesperada: HTTP {status}')
+        request=Request(upload['upload_url'],data=data,headers=upload['required_headers'],method='PUT')
+        with urlopen(request,timeout=60) as response:
+            if response.status not in (200,204): raise RuntimeError(f'Upload S3 inesperado: HTTP {response.status}')
+        sent.append({'dataset_type':dataset,'file_name':file.name,'ingestion_id':upload['ingestion_id']})
+    evidence('uploads-submetidos',{'batch_id':batch_id,'operation':operation,'files':sent})
+    print(json.dumps({'batch_id':batch_id,'status':'UPLOADED','files':sent,
+                      'next_step':f'python runner.py finalize --batch-id {batch_id}'},ensure_ascii=False,indent=2))
+    return batch_id
+
+
+def finalize(batch_id):
+    """Pede à API que feche o lote; SQS/Lambda passam a controlar a execução."""
+    status,result=api_post({'action':'finalize','batch_id':batch_id},access_token())
+    if status != 202: raise RuntimeError(f'Finalização inesperada: HTTP {status}')
+    evidence('lote-finalizado',result)
+    print(json.dumps(result,ensure_ascii=False,indent=2))
+
+
+def batch_status(batch_id):
+    item=ddb.get_item(TableName=o['batches_table'],Key={'batch_id':{'S':batch_id},'record_id':{'S':'META'}},ConsistentRead=True).get('Item')
+    if not item: raise RuntimeError(f'Lote inexistente: {batch_id}')
+    result={key:value.get('S',value.get('N')) for key,value in item.items()}
+    evidence('status-lote',result)
+    print(json.dumps(result,ensure_ascii=False,indent=2))
 
 
 def query(sql):
@@ -230,26 +247,23 @@ def quality():
 
 
 if a.action=='initial':
-    start_pipeline(upload('inicial'));verify('249.70');snapshots()
+    submit('inicial')
 elif a.action=='delta':
-    start_pipeline(upload('delta'));verify('198.80');snapshots()
+    submit('delta')
 elif a.action=='replay':
-    start_pipeline(upload('delta'));verify('198.80');snapshots()
+    submit('delta')
+elif a.action=='finalize':
+    if not a.batch_id: parser.error('--batch-id é obrigatório para finalize')
+    finalize(a.batch_id)
+elif a.action=='status':
+    if not a.batch_id: parser.error('--batch-id é obrigatório para status')
+    batch_status(a.batch_id)
 elif a.action=='verify':verify()
 elif a.action=='trace-gold':trace_gold()
 elif a.action=='snapshots':snapshots()
 elif a.action=='quality':quality()
 elif a.action=='fail-demo':
-    # O arquivo inválido permanece versionado para auditoria.
-    key=f'pagamentos/falha-{uuid.uuid4().hex}.jsonl'
-    data=(ROOT/'dados'/'falha_pagamento.jsonl').read_bytes()
-    sha=hashlib.sha256(data).hexdigest()
-    put=s3.put_object(Bucket=o['buckets']['bronze'],Key=key,Body=data,Metadata={'sha256':sha})
-    manifest_key=f'manifestos/bronze/falha-{uuid.uuid4().hex}.json'
-    s3.put_object(Bucket=o['buckets']['results'],Key=manifest_key,
-                  Body=json.dumps({'layer':'bronze','batch_id':'fail_'+uuid.uuid4().hex,'operation':'incremental','files':[{'s3_key':key,'dataset_type':'pagamentos','sha256':sha,'version_id':put.get('VersionId'),'size_bytes':len(data),'source_system':'runner','schema_version':'1','ingestion_id':uuid.uuid4().hex,'status':'RECEIVED'}]}).encode('utf-8'),ContentType='application/json')
-    start_pipeline(manifest_key,expect_failure=True)
-    verify()
+    submit('falha',[ROOT/'dados'/'falha_pagamento.jsonl'])
 
 elif a.action=='questions':
     queries={

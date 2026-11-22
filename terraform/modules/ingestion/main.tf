@@ -285,8 +285,13 @@ resource "aws_s3_bucket_notification" "bronze" {
   depends_on = [aws_sqs_queue_policy.object_events]
 }
 
-output "api_url" { value = "https://${aws_api_gateway_rest_api.ingestion.id}.execute-api.${var.region}.amazonaws.com/${aws_api_gateway_stage.ingestion.stage_name}" }
+output "api_url" { value = "https://${aws_api_gateway_rest_api.ingestion.id}.execute-api.${var.region}.amazonaws.com/${aws_api_gateway_stage.ingestion.stage_name}/ingestions" }
 output "token_url" { value = "https://${aws_cognito_user_pool_domain.ingestors.domain}.auth.${var.region}.amazoncognito.com/oauth2/token" }
+output "client_id" { value = aws_cognito_user_pool_client.machine.id }
+output "client_secret" {
+  value     = aws_cognito_user_pool_client.machine.client_secret
+  sensitive = true
+}
 output "function_names" { value = [aws_lambda_function.api.function_name, aws_lambda_function.receipt.function_name, aws_lambda_function.orchestrator.function_name] }
 output "dlq_names" { value = [aws_sqs_queue.object_dlq.name, aws_sqs_queue.ready_dlq.name] }
 

@@ -159,4 +159,10 @@ output "state_machine_arn" { value = module.orchestration.state_machine_arn }
 output "jobs" { value = module.etl.jobs }
 output "ingestion_api_url" { value = module.ingestion.api_url }
 output "cognito_token_url" { value = module.ingestion.token_url }
+output "ingestion_client_id" { value = module.ingestion.client_id }
+output "ingestion_client_secret" {
+  value     = module.ingestion.client_secret
+  sensitive = true
+}
+output "batches_table" { value = module.ingestion.batch_table }
 output "consumer_workgroup" { value = module.consumption.workgroup }

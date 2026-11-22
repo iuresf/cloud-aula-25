@@ -25,7 +25,7 @@ A figura identifica os recursos Terraform do lakehouse e da ingestão corporativ
 
 ```
 ERP/Cadastros/Gateway/Eventos
-         |  runner.py: upload + manifesto sha256/VersionId
+         |  cliente: API de ingestão + upload pré-assinado
          v
 Bronze S3 (CSV/JSONL originais e versionamento de objetos)
          |
@@ -131,9 +131,7 @@ SQS ready → Lambda orchestrator → Step Functions → Glue Silver → Glue Go
 5. Falhas de contrato na chegada, incluindo metadados ausentes, tamanho divergente ou hash divergente, copiam o original para `Quarantine`, registram `REJECTED` e a razão no ledger e confirmam a mensagem. Falhas operacionais de S3, DynamoDB ou SQS são reenviadas pela SQS e seguem para a DLQ após cinco tentativas. A Lambda `orchestrator` registra `ORCHESTRATION_RETRY` no ledger antes de devolver uma falha transitória à fila `ready`. Alarmes observam DLQs e erros de Lambda.
 6. Na Step Functions, Silver e Gold tentam novamente até três vezes para erros transitórios do Glue e timeout, com espera exponencial de 15 s. Qualquer erro restante é capturado: uma falha Silver encerra a execução como `FAILED` sem iniciar Gold; uma falha Gold encerra como `FAILED`, preservando o snapshot Iceberg já publicado por Silver. O alarme `ExecutionsFailed` registra essas execuções no CloudWatch.
 
-O cliente usa todos os cabeçalhos devolvidos pela API, inclusive `x-amz-checksum-sha256`; assim o S3 verifica o checksum durante o upload e a Lambda `receipt` o recalcula sobre o objeto versionado. O contrato de entrada é deliberadamente mínimo: para executar um refresh dimensional completo, envie o conjunto de datasets esperado pelo job Silver usando o fluxo de lote da aplicação produtora. O `runner.py` continua sendo o caminho de carga demonstrativa da aula.
-
-O `runner.py` continua existindo como caminho didático/local. Para produção, a API substitui o upload direto feito pelo runner.
+O cliente usa todos os cabeçalhos devolvidos pela API, inclusive `x-amz-checksum-sha256`; assim o S3 verifica o checksum durante o upload e a Lambda `receipt` o recalcula sobre o objeto versionado. O contrato de entrada é deliberadamente mínimo: para executar um refresh dimensional completo, envie o conjunto de datasets esperado pelo job Silver usando o fluxo de lote da aplicação produtora. O `runner.py` é um cliente dessa mesma API: não grava diretamente no Bronze, não cria manifestos e não inicia Step Functions.
 
 ### Testes de erro de envio
 
@@ -191,12 +189,22 @@ Verifique no console: buckets `bronze/silver/gold/results`; database Glue; jobs 
 ## Execução guiada
 
 ```bash
-python runner.py initial     # carrega inicial, Step Functions Silver -> Gold, valida R$ 249,70
+# Credenciais da aplicação Cognito; não grave estes valores no repositório.
+export INGESTION_CLIENT_ID="$(terraform -chdir=terraform output -raw ingestion_client_id)"
+export INGESTION_CLIENT_SECRET="$(terraform -chdir=terraform output -raw ingestion_client_secret)"
+
+python runner.py initial     # submete os seis arquivos do lote inicial pela API
+# Copie o batch_id retornado e aguarde a confirmação dos uploads pela AWS.
+python runner.py status --batch-id BATCH_ID
+python runner.py finalize --batch-id BATCH_ID  # API -> SQS -> Lambda -> Step Functions
+python runner.py status --batch-id BATCH_ID
+
+# Após o estado PUBLISHED, são apenas consultas de verificação:
+python runner.py verify      # valida R$ 249,70
 python runner.py snapshots   # guarda IDs reais dos snapshots
-python runner.py delta       # estorna P1042, aprova P1045, valida R$ 198,80
-python runner.py replay      # reenviar delta: mesmas 5 linhas e R$ 198,80
-python runner.py fail-demo   # pagamento inválido: falha antes dos commits da Silver
-python runner.py verify      # valida integridade da tabela de fatos
+python runner.py delta       # submete o lote incremental; finalize usando o batch_id retornado
+python runner.py replay      # submete novamente o mesmo delta; finalize usando o batch_id retornado
+python runner.py fail-demo   # submete pagamento inválido; finalize para testar a falha Silver
 python runner.py trace-gold  # confere cada linha Gold até VersionId e SHA-256 do Bronze
 python runner.py questions   # executa perguntas, inclusive time travel
 ```
@@ -275,7 +283,7 @@ Cognito / API Gateway / WAF
   → Athena: FOR VERSION AS OF em cada tabela, usando os sete IDs publicados
 ```
 
-O runner didático (`initial`, `delta`, `replay`, `verify`, `trace-gold`, `snapshots`, `fail-demo`) continua disponível. Ele cria o mesmo contrato Bronze, embora envie diretamente ao S3. `initial` exige os seis datasets; `incremental` aceita apenas fontes alteradas se houver Silver anterior e uma versão publicada. Os datasets são `pedidos`, `itens`, `clientes`, `produtos`, `pagamentos` e `eventos`, com `schema_version=1`. O processamento mantém as regras dos pedidos P1042, P1044 e P1045. A API usa o mesmo endpoint POST com `action: "finalize"` para fechar um lote; uma sessão pendente ou rejeitada impede a finalização. O lote pode ser tentado novamente após a Receipt terminar.
+O runner didático (`initial`, `delta`, `replay`, `fail-demo`, `finalize`, `status`, `verify`, `trace-gold`, `snapshots`) usa a API de ingestão como qualquer cliente externo. `initial` exige os seis datasets; `incremental` aceita apenas fontes alteradas se houver Silver anterior e uma versão publicada. Os datasets são `pedidos`, `itens`, `clientes`, `produtos`, `pagamentos` e `eventos`, com `schema_version=1`. O processamento mantém as regras dos pedidos P1042, P1044 e P1045. `initial`, `delta`, `replay` e `fail-demo` apenas criam sessões e enviam arquivos. `finalize` fecha explicitamente o lote na API; então SQS, Lambda `orchestrator` e Step Functions assumem toda a orquestração. `status` somente consulta o ledger do lote. Uma sessão pendente ou rejeitada impede a finalização.
 
 Exemplo de criação de sessão (usar Bearer Cognito e `ingestion_api_url` de `terraform output`):
 
